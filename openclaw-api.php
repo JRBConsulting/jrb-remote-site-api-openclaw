@@ -2,8 +2,10 @@
 /**
  * Plugin Name: OpenClaw API
  * Description: WordPress REST API for OpenClaw remote site management
- * Version: 2.0.1
+ * Version: 2.0.2
  * Author: OpenClaw
+ * License: AGPLv3.0 or later
+ * License URI: https://www.gnu.org/licenses/agpl-3.0.html
  */
 
 if (!defined('ABSPATH')) {
@@ -151,31 +153,46 @@ add_action('rest_api_init', function() {
 
 /**
  * Verify API token from X-OpenClaw-Token header
- * Uses hash_equals to prevent timing attacks
+ * Uses timing-safe comparison and hashed token storage
+ * Supports legacy plaintext tokens for migration
  */
 function openclaw_verify_token() {
-    $token = get_option('openclaw_api_token');
     $header = isset($_SERVER['HTTP_X_OPENCLAW_TOKEN']) ? $_SERVER['HTTP_X_OPENCLAW_TOKEN'] : '';
-    
-    if (empty($token)) {
-        return new WP_Error('no_token', 'API token not configured. Go to Settings → OpenClaw API.', ['status' => 500]);
-    }
     
     if (empty($header)) {
         return new WP_Error('missing_header', 'Missing X-OpenClaw-Token header', ['status' => 401]);
     }
     
-    // Use hash_equals to prevent timing attacks
-    if (!hash_equals($token, $header)) {
-        return new WP_Error('invalid_token', 'Invalid API token', ['status' => 401]);
+    // Check for hashed token first (preferred)
+    $token_hash = get_option('openclaw_api_token_hash');
+    if (!empty($token_hash)) {
+        $header_hash = wp_hash($header);
+        if (hash_equals($token_hash, $header_hash)) {
+            return true;
+        }
     }
     
-    return true;
+    // Fallback to legacy plaintext token (for migration)
+    $legacy_token = get_option('openclaw_api_token');
+    if (!empty($legacy_token)) {
+        if (hash_equals($legacy_token, $header)) {
+            // Migrate to hashed storage
+            update_option('openclaw_api_token_hash', wp_hash($legacy_token));
+            delete_option('openclaw_api_token');
+            return true;
+        }
+    }
+    
+    if (empty($token_hash) && empty($legacy_token)) {
+        return new WP_Error('no_token', 'API token not configured. Go to Settings → OpenClaw API.', ['status' => 500]);
+    }
+    
+    return new WP_Error('invalid_token', 'Invalid API token', ['status' => 401]);
 }
 
 // Ping endpoint
 function openclaw_ping() {
-    return ['status' => 'ok', 'version' => '2.0.1', 'time' => current_time('mysql')];
+    return ['status' => 'ok', 'version' => '2.0.2', 'time' => current_time('mysql')];
 }
 
 // Site info
@@ -247,6 +264,16 @@ function openclaw_create_post($request) {
 // Update post
 function openclaw_update_post($request) {
     $id = (int) $request['id'];
+    
+    // Verify post exists and is correct type
+    $post = get_post($id);
+    if (!$post) {
+        return new WP_Error('post_not_found', 'Post not found', ['status' => 404]);
+    }
+    if ($post->post_type !== 'post') {
+        return new WP_Error('invalid_post_type', 'This endpoint only works with posts, not pages or other types', ['status' => 400]);
+    }
+    
     $data = $request->get_json_params();
     $post_data = ['ID' => $id];
     
@@ -280,6 +307,16 @@ function openclaw_update_post($request) {
 // Delete post
 function openclaw_delete_post($request) {
     $id = (int) $request['id'];
+    
+    // Verify post exists and is correct type
+    $post = get_post($id);
+    if (!$post) {
+        return new WP_Error('post_not_found', 'Post not found', ['status' => 404]);
+    }
+    if ($post->post_type !== 'post') {
+        return new WP_Error('invalid_post_type', 'This endpoint only works with posts, not pages or other types', ['status' => 400]);
+    }
+    
     $force = $request->get_param('force') === 'true';
     $result = wp_delete_post($id, $force);
     if (!$result) {
@@ -290,6 +327,9 @@ function openclaw_delete_post($request) {
 
 // Format post
 function openclaw_format_post($post) {
+    if (!$post) {
+        return null;
+    }
     return [
         'id' => $post->ID,
         'title' => $post->post_title,
@@ -314,7 +354,13 @@ function openclaw_get_categories() {
 
 function openclaw_create_category($request) {
     $data = $request->get_json_params();
-    $result = wp_insert_term(sanitize_text_field($data['name']), 'category');
+    $name = sanitize_text_field($data['name'] ?? '');
+    
+    if (empty($name)) {
+        return new WP_Error('missing_name', 'Category name is required', ['status' => 400]);
+    }
+    
+    $result = wp_insert_term($name, 'category');
     if (is_wp_error($result)) return $result;
     $cat = get_term($result['term_id'], 'category');
     return ['id' => $cat->term_id, 'name' => $cat->name, 'slug' => $cat->slug];
@@ -330,7 +376,13 @@ function openclaw_get_tags() {
 
 function openclaw_create_tag($request) {
     $data = $request->get_json_params();
-    $result = wp_insert_term(sanitize_text_field($data['name']), 'post_tag');
+    $name = sanitize_text_field($data['name'] ?? '');
+    
+    if (empty($name)) {
+        return new WP_Error('missing_name', 'Tag name is required', ['status' => 400]);
+    }
+    
+    $result = wp_insert_term($name, 'post_tag');
     if (is_wp_error($result)) return $result;
     $tag = get_term($result['term_id'], 'post_tag');
     return ['id' => $tag->term_id, 'name' => $tag->name, 'slug' => $tag->slug];
@@ -368,7 +420,13 @@ function openclaw_create_page($request) {
 function openclaw_get_users() {
     $users = get_users();
     return array_map(function($u) {
-        return ['id' => $u->ID, 'username' => $u->user_login, 'email' => $u->user_email, 'roles' => $u->roles];
+        // Email excluded for privacy - only return necessary info
+        return [
+            'id' => $u->ID,
+            'username' => $u->user_login,
+            'display_name' => $u->display_name,
+            'roles' => $u->roles,
+        ];
     }, $users);
 }
 
@@ -769,13 +827,30 @@ function openclaw_verify_token_and_can($capability) {
 }
 
 function openclaw_api_admin_page() {
-    // Handle token actions
+    $new_token = null;
+    
+    // Handle token generation
     if (isset($_POST['openclaw_generate']) && check_admin_referer('openclaw_settings')) {
-        update_option('openclaw_api_token', wp_generate_password(64, false));
-        echo '<div class="notice notice-success"><p>Token generated!</p></div>';
+        // Generate a new token
+        $token = wp_generate_password(64, false);
+        $token_hash = wp_hash($token);
+        
+        // Store the hash, not the token
+        update_option('openclaw_api_token_hash', $token_hash);
+        delete_option('openclaw_api_token'); // Remove any legacy plaintext token
+        
+        // Store token temporarily to show to user (cleared after display)
+        $new_token = $token;
+        set_transient('openclaw_new_token', $token, 60);
+        
+        echo '<div class="notice notice-success"><p>Token generated! <strong>Copy it now - it will not be shown again.</strong></p></div>';
     }
+    
+    // Handle token deletion
     if (isset($_POST['openclaw_delete']) && check_admin_referer('openclaw_settings')) {
-        delete_option('openclaw_api_token');
+        delete_option('openclaw_api_token_hash');
+        delete_option('openclaw_api_token'); // Remove any legacy plaintext token
+        delete_transient('openclaw_new_token');
         echo '<div class="notice notice-success"><p>Token deleted!</p></div>';
     }
     
@@ -789,7 +864,12 @@ function openclaw_api_admin_page() {
         echo '<div class="notice notice-success"><p>Capabilities saved!</p></div>';
     }
     
-    $token = get_option('openclaw_api_token');
+    // Check for newly generated token to display
+    if (!$new_token) {
+        $new_token = get_transient('openclaw_new_token');
+    }
+    
+    $has_token = get_option('openclaw_api_token_hash') || get_option('openclaw_api_token');
     $caps = openclaw_get_capabilities();
     $defaults = openclaw_get_default_capabilities();
     
@@ -832,16 +912,29 @@ function openclaw_api_admin_page() {
         <p>REST API for OpenClaw remote site management. Use <code>X-OpenClaw-Token</code> header for authentication.</p>
         
         <h2>API Token</h2>
-        <?php if ($token): ?>
-            <p><code style="background:#f0f0f1;padding:10px;display:block;word-break:break-all;font-size:13px;"><?php echo esc_html($token); ?></code></p>
-            <pre style="background:#f0f0f1;padding:15px;font-size:12px;">curl -H "X-OpenClaw-Token: <?php echo esc_html($token); ?>" \
+        <?php if ($new_token): ?>
+            <div class="notice notice-warning" style="background:#fff3cd;border-left-color:#ffb900;">
+                <p><strong>⚠️ Copy this token now! It will not be shown again.</strong></p>
+                <p><code style="background:#f0f0f1;padding:10px;display:block;word-break:break-all;font-size:14px;font-weight:bold;"><?php echo esc_html($new_token); ?></code></p>
+                <p style="color:#666;font-size:12px;">Store this securely. Tokens are stored hashed and cannot be recovered.</p>
+            </div>
+            <pre style="background:#f0f0f1;padding:15px;font-size:12px;margin-top:15px;">curl -H "X-OpenClaw-Token: <?php echo esc_html($new_token); ?>" \
     https://yoursite.com/wp-json/openclaw/v1/site</pre>
+            <?php
+            // Clear the transient so it's not shown again
+            delete_transient('openclaw_new_token');
+            ?>
+        <?php elseif ($has_token): ?>
+            <p style="color:#666;">✓ API token is configured. Tokens are stored hashed and cannot be displayed.</p>
             <form method="post" style="margin-top:10px;">
                 <?php wp_nonce_field('openclaw_settings'); ?>
                 <input type="hidden" name="openclaw_delete" value="1">
                 <input type="submit" value="Delete Token" class="button" onclick="return confirm('Are you sure? This will break all API integrations.');">
+                <button type="submit" name="openclaw_generate" value="1" class="button" style="margin-left:5px;" onclick="return confirm('Generate a new token? The old token will stop working immediately.');">Regenerate Token</button>
+                <?php wp_nonce_field('openclaw_settings'); ?>
             </form>
         <?php else: ?>
+            <p style="color:#666;">No API token configured. Generate one to enable API access.</p>
             <form method="post">
                 <?php wp_nonce_field('openclaw_settings'); ?>
                 <input type="hidden" name="openclaw_generate" value="1">

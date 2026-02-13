@@ -3,10 +3,10 @@ Contributors: openclaw
 Tags: api, rest, remote, management, openclaw
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 2.0.1
+Stable tag: 2.0.2
 Requires PHP: 7.4
-License: GPLv2 or later
-License URI: https://www.gnu.org/licenses/gpl-2.0.html
+License: AGPLv3.0 or later
+License URI: https://www.gnu.org/licenses/agpl-3.0.html
 
 REST API for OpenClaw remote site management with fine-grained capability controls.
 
@@ -27,9 +27,11 @@ plugin management, and site administration.
 **Security:**
 
 * All endpoints require authentication via `X-OpenClaw-Token` header
+* Tokens are hashed for secure storage
 * Dangerous actions (plugin install, activate, delete) are disabled by default
 * Token can be regenerated or deleted at any time
 * Works with Cloudflare and other CDNs that strip Authorization headers
+* Timing-safe token comparison prevents timing attacks
 
 == Installation ==
 
@@ -50,13 +52,20 @@ that works reliably behind these services.
 
 = Is this plugin secure? =
 
-Yes. All endpoints require a valid API token. Dangerous operations are disabled by 
-default and must be explicitly enabled in the settings. Tokens can be regenerated 
-or revoked at any time.
+Yes. All endpoints require a valid API token. Tokens are hashed using WordPress's 
+secure hashing. Dangerous operations are disabled by default and must be explicitly 
+enabled in the settings. Tokens can be regenerated or revoked at any time.
 
 = Can I use this with other tools besides OpenClaw? =
 
 Yes! Any tool that can make HTTP requests with custom headers can use this API.
+
+= Why AGPLv3.0? =
+
+The AGPLv3.0 license ensures that anyone who modifies this software and makes it 
+available as a network service (such as a SaaS offering) must also share their 
+modifications under the same license terms. This prevents proprietary forks while 
+allowing full freedom for end users.
 
 == Usage ==
 
@@ -129,8 +138,17 @@ curl -X POST \
 
 == Changelog ==
 
+= 2.0.2 =
+* SECURITY: Changed license to AGPLv3.0 for stronger copyleft
+* SECURITY: Token now hashed before storage (tokens shown once on generation)
+* SECURITY: Fixed post type validation (can only modify 'post' type, not pages/attachments)
+* SECURITY: Added post existence check before update/delete
+* SECURITY: Removed email from users endpoint (privacy protection)
+* Added null checks in format_post function
+* Added missing term validation in category/tag creation
+
 = 2.0.1 =
-* SECURITY: Fixed timing attack vulnerability in token verification (uses hash_equals)
+* SECURITY: Fixed timing attack vulnerability in token verification
 * SECURITY: Added post status validation (only draft, pending, private, publish allowed)
 * SECURITY: Added author ID validation (validates user exists before assignment)
 * Added plugin slug validation (lowercase alphanumeric with hyphens only)
@@ -148,6 +166,11 @@ curl -X POST \
 * Initial release
 
 == Upgrade Notice ==
+
+= 2.0.2 =
+**Important:** Token storage has changed. After updating, you will need to regenerate 
+your API token in Settings → OpenClaw API. The new token will be shown ONCE - save it 
+securely.
 
 = 2.0.0 =
 Breaking change: API namespace changed from `lilith/v1` to `openclaw/v1`. 
