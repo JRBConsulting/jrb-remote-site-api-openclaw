@@ -2,7 +2,7 @@
 /**
  * Plugin Name: OpenClaw API
  * Description: WordPress REST API for OpenClaw remote site management
- * Version: 2.1.0
+ * Version: 2.1.1
  * Author: OpenClaw
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -204,7 +204,7 @@ function openclaw_verify_token() {
 
 // Ping endpoint
 function openclaw_ping() {
-    return ['status' => 'ok', 'version' => '2.1.0', 'time' => current_time('mysql')];
+    return ['status' => 'ok', 'time' => current_time('mysql')];
 }
 
 // Site info
@@ -245,12 +245,18 @@ function openclaw_create_post($request) {
         $status = 'draft';
     }
     
-    // Validate author ID if provided
-    $author_id = (int) ($data['author_id'] ?? 1);
-    if ($author_id > 1) {
-        $user = get_user_by('id', $author_id);
-        if (!$user) {
-            return new WP_Error('invalid_author', 'Invalid author ID', ['status' => 400]);
+    // Determine author ID (requires posts_set_author capability to override)
+    $author_id = 1;  // Default to first user
+    if (!empty($data['author_id'])) {
+        if (openclaw_can('posts_set_author')) {
+            $author_id = (int) $data['author_id'];
+            $user = get_user_by('id', $author_id);
+            if (!$user) {
+                return new WP_Error('invalid_author', 'Invalid author ID', ['status' => 400]);
+            }
+        } else {
+            // Optionally return error if author_id provided but capability missing
+            // For now, silently ignore and use default
         }
     }
     
@@ -420,36 +426,56 @@ function openclaw_upload_media($request) {
     // Validate file upload errors
     if ($file['error'] !== UPLOAD_ERR_OK) {
         $error_messages = [
-            UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize directive',
-            UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive',
+            UPLOAD_ERR_INI_SIZE => 'File exceeds maximum size',
+            UPLOAD_ERR_FORM_SIZE => 'File exceeds maximum size',
             UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
             UPLOAD_ERR_NO_FILE => 'No file was uploaded',
-            UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
-            UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
-            UPLOAD_ERR_EXTENSION => 'File upload stopped by extension',
+            UPLOAD_ERR_NO_TMP_DIR => 'Server configuration error',
+            UPLOAD_ERR_CANT_WRITE => 'Server configuration error',
+            UPLOAD_ERR_EXTENSION => 'File upload blocked',
         ];
-        $msg = $error_messages[$file['error']] ?? 'Unknown upload error';
+        $msg = $error_messages[$file['error']] ?? 'Upload failed';
         return new WP_Error('upload_error', $msg, ['status' => 400]);
     }
     
-    // Validate file type (images only for security)
-    $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+    // Validate actual file size (not user-provided value)
+    $max_size = 10 * 1024 * 1024;
+    $actual_size = filesize($file['tmp_name']);
+    if ($actual_size === false || $actual_size > $max_size) {
+        return new WP_Error('file_too_large', 'File exceeds 10MB limit', ['status' => 400]);
+    }
+    
+    // Validate MIME type from file content (not user-provided)
+    $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];  // SVG removed - XSS risk
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
     $mime_type = finfo_file($finfo, $file['tmp_name']);
     finfo_close($finfo);
     
     if (!in_array($mime_type, $allowed_types, true)) {
-        return new WP_Error('invalid_type', 'Only image files are allowed (JPEG, PNG, GIF, WebP, SVG)', ['status' => 400]);
+        return new WP_Error('invalid_type', 'Only image files are allowed (JPEG, PNG, GIF, WebP)', ['status' => 400]);
     }
     
-    // Validate file size (max 10MB)
-    $max_size = 10 * 1024 * 1024;
-    if ($file['size'] > $max_size) {
-        return new WP_Error('file_too_large', 'File exceeds 10MB limit', ['status' => 400]);
+    // Validate actual image content (prevent polyglot attacks)
+    $image_info = @getimagesize($file['tmp_name']);
+    if ($image_info === false || $image_info['mime'] !== $mime_type) {
+        return new WP_Error('invalid_image', 'File is not a valid image', ['status' => 400]);
     }
     
-    // Sanitize filename
-    $filename = sanitize_file_name($file['name']);
+    // Map MIME type to safe extension (never trust user input)
+    $mime_to_ext = [
+        'image/jpeg' => 'jpg',
+        'image/png'  => 'png',
+        'image/gif'  => 'gif',
+        'image/webp' => 'webp',
+    ];
+    $safe_ext = $mime_to_ext[$mime_type] ?? 'jpg';
+    
+    // Generate safe filename
+    $base_name = pathinfo(sanitize_file_name($file['name']), PATHINFO_FILENAME);
+    $safe_name = sanitize_file_name($base_name . '.' . $safe_ext);
+    
+    // Override with safe filename
+    $file['name'] = $safe_name;
     
     // Prepare for WordPress upload
     require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -457,31 +483,41 @@ function openclaw_upload_media($request) {
     require_once ABSPATH . 'wp-admin/includes/image.php';
     
     // Use WordPress file upload handler
-    $upload = wp_handle_upload($file, ['test_form' => false]);
+    $upload = wp_handle_upload($file, ['test_form' => false, 'test_type' => false]);
     
     if (isset($upload['error'])) {
-        return new WP_Error('upload_failed', $upload['error'], ['status' => 500]);
+        return new WP_Error('upload_failed', 'File upload failed', ['status' => 500]);
     }
+    
+    // Final safety check: scan for PHP content
+    $file_content = file_get_contents($upload['file']);
+    if (preg_match('/<\?php|<\?=|<\s*script\s+language\s*=\s*["\']?php/i', $file_content)) {
+        @unlink($upload['file']);
+        return new WP_Error('suspicious_content', 'File contains suspicious content', ['status' => 400]);
+    }
+    
+    // Determine author (use defined API user or fallback)
+    $api_user_id = (int) get_option('openclaw_api_user_id', 1);
     
     // Create attachment
     $attachment = [
         'post_mime_type' => $upload['type'],
-        'post_title' => sanitize_text_field($request->get_param('title') ?: pathinfo($filename, PATHINFO_FILENAME)),
+        'post_title' => sanitize_text_field($request->get_param('title') ?: $base_name),
         'post_content' => '',
         'post_status' => 'inherit',
+        'post_author' => $api_user_id,
     ];
     
     $attach_id = wp_insert_attachment($attachment, $upload['file']);
     
     if (is_wp_error($attach_id)) {
-        return new WP_Error('attachment_failed', $attach_id->get_error_message(), ['status' => 500]);
+        @unlink($upload['file']);
+        return new WP_Error('attachment_failed', 'Failed to create attachment', ['status' => 500]);
     }
     
     // Generate metadata for images (thumbnails, etc.)
-    if (strpos($upload['type'], 'image/') === 0 && $upload['type'] !== 'image/svg+xml') {
-        $attach_data = wp_generate_attachment_metadata($attach_id, $upload['file']);
-        wp_update_attachment_metadata($attach_id, $attach_data);
-    }
+    $attach_data = wp_generate_attachment_metadata($attach_id, $upload['file']);
+    wp_update_attachment_metadata($attach_id, $attach_data);
     
     // Get the URL
     $url = wp_get_attachment_url($attach_id);
@@ -492,7 +528,7 @@ function openclaw_upload_media($request) {
         'title' => get_the_title($attach_id),
         'url' => $url,
         'mime_type' => $upload['type'],
-        'size' => $file['size'],
+        'size' => $actual_size,
     ];
 }
 
@@ -524,11 +560,19 @@ function openclaw_get_pages() {
 
 function openclaw_create_page($request) {
     $data = $request->get_json_params();
+    
+    // Validate status (same as posts)
+    $allowed_statuses = ['draft', 'pending', 'private', 'publish'];
+    $status = sanitize_text_field($data['status'] ?? 'draft');
+    if (!in_array($status, $allowed_statuses, true)) {
+        $status = 'draft';
+    }
+    
     $page_id = wp_insert_post([
         'post_type' => 'page',
         'post_title' => sanitize_text_field($data['title'] ?? 'Untitled'),
         'post_content' => $data['content'] ?? '',
-        'post_status' => sanitize_text_field($data['status'] ?? 'draft'),
+        'post_status' => $status,
     ], true);
     if (is_wp_error($page_id)) return $page_id;
     return ['id' => $page_id, 'title' => $data['title'] ?? 'Untitled', 'link' => get_permalink($page_id)];
@@ -900,6 +944,7 @@ function openclaw_get_default_capabilities() {
         'posts_create' => true,
         'posts_update' => true,
         'posts_delete' => false,
+        'posts_set_author' => false,  // Off by default - allows impersonation
         'pages_read' => true,
         'pages_create' => true,
         'categories_read' => true,
@@ -995,7 +1040,7 @@ function openclaw_api_admin_page() {
     
     // Group capabilities
     $groups = [
-        'Posts' => ['posts_read', 'posts_create', 'posts_update', 'posts_delete'],
+        'Posts' => ['posts_read', 'posts_create', 'posts_update', 'posts_delete', 'posts_set_author'],
         'Pages' => ['pages_read', 'pages_create'],
         'Taxonomies' => ['categories_read', 'categories_create', 'tags_read', 'tags_create'],
         'Media' => ['media_read', 'media_upload', 'media_delete'],
@@ -1009,6 +1054,7 @@ function openclaw_api_admin_page() {
         'posts_create' => 'Create Posts',
         'posts_update' => 'Update Posts',
         'posts_delete' => 'Delete Posts',
+        'posts_set_author' => 'Set Post Author',
         'pages_read' => 'Read Pages',
         'pages_create' => 'Create Pages',
         'categories_read' => 'Read Categories',
