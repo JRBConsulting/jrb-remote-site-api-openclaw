@@ -329,14 +329,10 @@ class OpenClaw_FluentCRM_Module {
         
         // Check if table exists
         if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
-            return new WP_REST_Response(['error' => 'FluentCRM lists table not found'], 500);
+            return new WP_REST_Response(['error' => 'FluentCRM lists table not found', 'table' => $table], 500);
         }
         
-        $lists = $wpdb->get_results(
-            "SELECT id, title, slug, description, total_contacts, created_at, updated_at 
-             FROM $table 
-             ORDER BY title ASC"
-        );
+        $lists = $wpdb->get_results("SELECT * FROM $table ORDER BY id ASC");
         
         return new WP_REST_Response($lists, 200);
     }
@@ -349,12 +345,7 @@ class OpenClaw_FluentCRM_Module {
             return new WP_REST_Response(['error' => 'FluentCRM tags table not found'], 500);
         }
         
-        $tags = $wpdb->get_results(
-            "SELECT id, title, slug, description, total_contacts, created_at, updated_at 
-             FROM $table 
-             ORDER BY title ASC"
-        );
-        
+        $tags = $wpdb->get_results("SELECT * FROM $table ORDER BY id ASC");
         return new WP_REST_Response($tags, 200);
     }
 
@@ -366,12 +357,7 @@ class OpenClaw_FluentCRM_Module {
             return new WP_REST_Response(['error' => 'FluentCRM campaigns table not found'], 500);
         }
         
-        $campaigns = $wpdb->get_results(
-            "SELECT id, title, slug, status, email_count, created_at, updated_at, scheduled_at, delivered_at 
-             FROM $table 
-             ORDER BY created_at DESC"
-        );
-        
+        $campaigns = $wpdb->get_results("SELECT * FROM $table ORDER BY id DESC");
         return new WP_REST_Response($campaigns, 200);
     }
 
@@ -415,7 +401,7 @@ class OpenClaw_FluentCRM_Module {
         
         $inserted = $wpdb->insert($table, $campaign_data);
         if (!$inserted) {
-            return new WP_REST_Response(['error' => 'Failed to create campaign'], 500);
+            return new WP_REST_Response(['error' => 'Failed to create campaign', 'wpdb_error' => $wpdb->last_error], 500);
         }
         
         $campaign_id = $wpdb->insert_id;
