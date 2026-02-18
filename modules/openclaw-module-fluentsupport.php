@@ -406,6 +406,9 @@ class OpenClaw_FluentSupport_Module {
             $ticket_id
         )) + 1;
         
+        // Generate content hash
+        $content_hash = md5($content);
+        
         // Add response (using FluentSupport native column names)
         $wpdb->insert($responses_table, [
             'ticket_id' => $ticket_id,
@@ -414,11 +417,22 @@ class OpenClaw_FluentSupport_Module {
             'conversation_type' => 'response',  // "response" or "note"
             'content' => $content,
             'source' => 'web',
+            'content_hash' => $content_hash,
+            'is_important' => 'no',
             'created_at' => current_time('mysql'),
             'updated_at' => current_time('mysql'),
         ]);
         
         $response_id = $wpdb->insert_id;
+        
+        // Check for errors
+        if (!$response_id) {
+            return new WP_REST_Response([
+                'error' => 'Failed to insert response',
+                'db_error' => $wpdb->last_error,
+                'last_query' => $wpdb->last_query,
+            ], 500);
+        }
         
         // Update ticket status and timestamp
         $wpdb->update($tickets_table, [
