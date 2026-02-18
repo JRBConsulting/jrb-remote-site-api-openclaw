@@ -622,22 +622,43 @@ class OpenClaw_FluentCRM_Module {
         $list_id = (int)($request->get_json_params()['list_id'] ?? 0);
         
         if (!$subscriber_id || !$list_id) {
-            return new WP_REST_Response(['error' => 'Invalid request'], 400);
+            return new WP_REST_Response(['error' => 'Invalid request - requires subscriber_id and list_id'], 400);
         }
         
-        // Use FluentCRM helper if available
-        if (function_exists('fluentcrm_add_contact_to_list')) {
-            fluentcrm_add_contact_to_list($subscriber_id, $list_id);
-        } else {
-            global $wpdb;
-            $table = $wpdb->prefix . 'fc_subscriber_lists';
-            $wpdb->query($wpdb->prepare(
-                "INSERT IGNORE INTO $table (subscriber_id, list_id, status, created_at) VALUES (%d, %d, 'subscribed', NOW())",
-                $subscriber_id, $list_id
-            ));
+        global $wpdb;
+        $table = $wpdb->prefix . 'fc_subscriber_lists';
+        
+        // Check if already in list
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $table WHERE subscriber_id = %d AND list_id = %d",
+            $subscriber_id, $list_id
+        ));
+        
+        if ($existing) {
+            return new WP_REST_Response(['success' => true, 'message' => 'Already in list', 'existing_id' => (int)$existing], 200);
         }
         
-        return new WP_REST_Response(['success' => true], 200);
+        // Insert directly
+        $result = $wpdb->insert($table, [
+            'subscriber_id' => $subscriber_id,
+            'list_id' => $list_id,
+            'status' => 'subscribed',
+            'created_at' => current_time('mysql')
+        ]);
+        
+        if ($result === false) {
+            return new WP_REST_Response([
+                'error' => 'Failed to add to list',
+                'wpdb_error' => $wpdb->last_error,
+                'table' => $table
+            ], 500);
+        }
+        
+        return new WP_REST_Response([
+            'success' => true,
+            'insert_id' => $wpdb->insert_id,
+            'message' => 'Added to list successfully'
+        ], 200);
     }
 
     public static function add_tag($request) {
