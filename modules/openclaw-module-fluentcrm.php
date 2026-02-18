@@ -246,10 +246,22 @@ class OpenClaw_FluentCRM_Module {
         global $wpdb;
         $table = $wpdb->prefix . 'fc_subscriber_lists';
         
-        $results = $wpdb->get_results("SELECT sl.*, s.email FROM $table sl LEFT JOIN {$wpdb->prefix}fc_subscribers s ON sl.subscriber_id = s.id");
+        // First check what fc_ tables exist
+        $all_fc_tables = $wpdb->get_results("SHOW TABLES LIKE '{$wpdb->prefix}fc_%'", ARRAY_N);
+        $table_names = array_map(function($t) { return $t[0]; }, $all_fc_tables);
+        
+        // Check if the specific table exists
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table'") === $table;
+        
+        $results = [];
+        if ($table_exists) {
+            $results = $wpdb->get_results("SELECT sl.*, s.email FROM $table sl LEFT JOIN {$wpdb->prefix}fc_subscribers s ON sl.subscriber_id = s.id");
+        }
         
         return new WP_REST_Response([
-            'table' => $table,
+            'expected_table' => $table,
+            'table_exists' => $table_exists,
+            'all_fc_tables' => $table_names,
             'count' => count($results),
             'records' => $results
         ], 200);
