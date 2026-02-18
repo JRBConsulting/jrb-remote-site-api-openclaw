@@ -438,7 +438,7 @@ class OpenClaw_FluentSupport_Module {
         if (!$response_id) {
             // Get next serial number for this ticket
             $serial = (int)$wpdb->get_var($wpdb->prepare(
-                "SELECT MAX(serial) FROM $responses_table WHERE ticket_id = %d",
+                "SELECT MAX(serial) FROM $conversations_table WHERE ticket_id = %d",
                 $ticket_id
             )) + 1;
             
@@ -446,7 +446,7 @@ class OpenClaw_FluentSupport_Module {
             $content_hash = md5($content);
             
             // Add response (using FluentSupport native column names)
-            $wpdb->insert($responses_table, [
+            $wpdb->insert($conversations_table, [
                 'ticket_id' => $ticket_id,
                 'serial' => $serial,
                 'person_id' => $agent_id,
