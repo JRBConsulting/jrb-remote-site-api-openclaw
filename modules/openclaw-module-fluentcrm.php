@@ -28,7 +28,12 @@ class OpenClaw_FluentCRM_Module {
     }
 
     private static function is_fluentcrm_active() {
-        return function_exists('openclaw_is_plugin_active') && openclaw_is_plugin_active('fluent-crm');
+        // Try centralized detection first
+        if (function_exists('openclaw_is_plugin_active') && openclaw_is_plugin_active('fluentcrm')) {
+            return true;
+        }
+        // Fallback: check for FluentCRM classes directly
+        return class_exists('FluentCRM\App\Models\Subscriber') || class_exists('FluentCrm\App\Models\Subscriber');
     }
     
     /**
@@ -150,10 +155,10 @@ class OpenClaw_FluentCRM_Module {
         $query = \FluentCRM\App\Models\Subscriber::query()->with(['lists', 'tags']);
 
         if ($list_id) {
-            $query->whereHas('lists', fn($q) => $q->where('id', $list_id));
+            $query->whereHas('lists', function($q) use ($list_id) { $q->where('id', $list_id); });
         }
         if ($tag_id) {
-            $query->whereHas('tags', fn($q) => $q->where('id', $tag_id));
+            $query->whereHas('tags', function($q) use ($tag_id) { $q->where('id', $tag_id); });
         }
         if ($status) {
             $query->where('status', $status);
@@ -195,8 +200,8 @@ class OpenClaw_FluentCRM_Module {
             'last_name' => $s->last_name,
             'full_name' => trim($s->first_name . ' ' . $s->last_name),
             'status' => $s->status,
-            'lists' => $s->lists->map(fn($l) => ['id' => $l->id, 'title' => $l->title]),
-            'tags' => $s->tags->map(fn($t) => ['id' => $t->id, 'title' => $t->title]),
+            'lists' => $s->lists->map(function($l) { return ['id' => $l->id, 'title' => $l->title]; }),
+            'tags' => $s->tags->map(function($t) { return ['id' => $t->id, 'title' => $t->title]; }),
             'created_at' => $s->created_at,
             'custom_values' => $s->custom_values ?? []
         ];
