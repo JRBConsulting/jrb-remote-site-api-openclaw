@@ -150,13 +150,6 @@ class OpenClaw_FluentCRM_Module {
             'callback' => [__CLASS__, 'get_stats'],
             'permission_callback' => function() { return openclaw_verify_token_and_can('crm_reports_read'); }
         ]);
-        
-        // Debug - subscriber lists table
-        register_rest_route('openclaw/v1', '/crm/debug/subscriber-lists', [
-            'methods' => 'GET',
-            'callback' => [__CLASS__, 'debug_subscriber_lists'],
-            'permission_callback' => function() { return openclaw_verify_token_and_can('crm_reports_read'); }
-        ]);
     }
 
     // === IMPLEMENTATIONS ===
@@ -240,37 +233,6 @@ class OpenClaw_FluentCRM_Module {
             'created_at' => $s->created_at,
             'custom_values' => $s->custom_values ?? []
         ];
-    }
-    
-    public static function debug_subscriber_lists($request) {
-        global $wpdb;
-        $old_table = $wpdb->prefix . 'fc_subscriber_lists';
-        $pivot_table = $wpdb->prefix . 'fc_subscriber_pivot';
-        $campaign_emails_table = $wpdb->prefix . 'fc_campaign_emails';
-        
-        // Check campaign emails for a campaign
-        $campaign_id = (int)($request->get_param('campaign_id') ?: 13);
-        $campaign_emails = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $campaign_emails_table WHERE campaign_id = %d",
-            $campaign_id
-        ));
-        
-        // Check pivot table
-        $pivot_exists = $wpdb->get_var("SHOW TABLES LIKE '$pivot_table'") === $pivot_table;
-        $pivot_data = [];
-        
-        if ($pivot_exists) {
-            $pivot_data = $wpdb->get_results("SELECT * FROM $pivot_table LIMIT 30");
-        }
-        
-        return new WP_REST_Response([
-            'pivot_table' => $pivot_table,
-            'pivot_exists' => $pivot_exists,
-            'pivot_data' => $pivot_data,
-            'campaign_emails_table' => $campaign_emails_table,
-            'campaign_emails_for_campaign_' . $campaign_id => $campaign_emails,
-            'campaign_emails_count' => count($campaign_emails)
-        ], 200);
     }
 
     public static function get_subscriber($request) {
@@ -444,7 +406,7 @@ class OpenClaw_FluentCRM_Module {
             'design_template' => 'simple',
             'email_subject' => sanitize_text_field($data['subject'] ?? $title),
             'email_pre_header' => sanitize_text_field($data['preheader'] ?? ''),
-            'email_body' => $data['body_html'] ?? '',  // Full HTML content
+            'email_body' => wp_kses_post($data['body_html'] ?? ''),  // Sanitize HTML content
             'recipients_count' => 0,
             'delay' => 0,
             'utm_status' => 0,
@@ -545,7 +507,13 @@ class OpenClaw_FluentCRM_Module {
         foreach ($update_data as $key => $value) {
             if (strpos($key, 'email') === 0 && strpos($key, 'body') === false) {
                 $update_data[$key] = sanitize_email($value);
-            } elseif ($key !== 'email_body' && $key !== 'email_body_plain') {
+            } elseif ($key === 'email_body') {
+                // Allow safe HTML for email body, strip dangerous tags
+                $update_data[$key] = wp_kses_post($value);
+            } elseif ($key === 'email_body_plain') {
+                // Plain text version - escape HTML entities
+                $update_data[$key] = sanitize_textarea_field($value);
+            } else {
                 $update_data[$key] = sanitize_text_field($value);
             }
         }
@@ -689,22 +657,45 @@ class OpenClaw_FluentCRM_Module {
         $tag_id = (int)($request->get_json_params()['tag_id'] ?? 0);
         
         if (!$subscriber_id || !$tag_id) {
-            return new WP_REST_Response(['error' => 'Invalid request'], 400);
+            return new WP_REST_Response(['error' => 'Invalid request - requires subscriber_id and tag_id'], 400);
         }
         
-        // Use FluentCRM helper if available
-        if (function_exists('fluentcrm_add_tag_to_subscriber')) {
-            fluentcrm_add_tag_to_subscriber($subscriber_id, $tag_id);
-        } else {
-            global $wpdb;
-            $table = $wpdb->prefix . 'fc_subscriber_tags';
-            $wpdb->query($wpdb->prepare(
-                "INSERT IGNORE INTO $table (subscriber_id, tag_id, created_at) VALUES (%d, %d, NOW())",
-                $subscriber_id, $tag_id
-            ));
+        global $wpdb;
+        // Use unified pivot table for consistency with add_to_list
+        $table = $wpdb->prefix . 'fc_subscriber_pivot';
+        
+        // Check if already tagged
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $table WHERE subscriber_id = %d AND object_id = %d AND object_type = 'FluentCrm\\App\\Models\\Tag'",
+            $subscriber_id, $tag_id
+        ));
+        
+        if ($existing) {
+            return new WP_REST_Response(['success' => true, 'message' => 'Already tagged', 'existing_id' => (int)$existing], 200);
         }
         
-        return new WP_REST_Response(['success' => true], 200);
+        // Insert into pivot table
+        $result = $wpdb->insert($table, [
+            'subscriber_id' => $subscriber_id,
+            'object_id' => $tag_id,
+            'object_type' => 'FluentCrm\\App\\Models\\Tag',
+            'status' => 'subscribed',
+            'created_at' => current_time('mysql')
+        ]);
+        
+        if ($result === false) {
+            return new WP_REST_Response([
+                'error' => 'Failed to add tag',
+                'wpdb_error' => $wpdb->last_error,
+                'table' => $table
+            ], 500);
+        }
+        
+        return new WP_REST_Response([
+            'success' => true,
+            'insert_id' => $wpdb->insert_id,
+            'message' => 'Tag added successfully'
+        ], 200);
     }
 
     public static function get_stats($request) {
