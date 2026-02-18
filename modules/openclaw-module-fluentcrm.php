@@ -296,17 +296,54 @@ class OpenClaw_FluentCRM_Module {
     }
 
     public static function list_lists($request) {
-        $lists = \FluentCRM\App\Models\Lists::withCount('subscribers')->get();
+        global $wpdb;
+        $table = $wpdb->prefix . 'fc_lists';
+        
+        // Check if table exists
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+            return new WP_REST_Response(['error' => 'FluentCRM lists table not found'], 500);
+        }
+        
+        $lists = $wpdb->get_results(
+            "SELECT id, title, slug, description, total_contacts, created_at, updated_at 
+             FROM $table 
+             ORDER BY title ASC"
+        );
+        
         return new WP_REST_Response($lists, 200);
     }
 
     public static function list_tags($request) {
-        $tags = \FluentCRM\App\Models\Tag::withCount('subscribers')->get();
+        global $wpdb;
+        $table = $wpdb->prefix . 'fc_tags';
+        
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+            return new WP_REST_Response(['error' => 'FluentCRM tags table not found'], 500);
+        }
+        
+        $tags = $wpdb->get_results(
+            "SELECT id, title, slug, description, total_contacts, created_at, updated_at 
+             FROM $table 
+             ORDER BY title ASC"
+        );
+        
         return new WP_REST_Response($tags, 200);
     }
 
     public static function list_campaigns($request) {
-        $campaigns = \FluentCRM\App\Models\Campaign::orderBy('created_at', 'desc')->get();
+        global $wpdb;
+        $table = $wpdb->prefix . 'fc_campaigns';
+        
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+            return new WP_REST_Response(['error' => 'FluentCRM campaigns table not found'], 500);
+        }
+        
+        $campaigns = $wpdb->get_results(
+            "SELECT id, title, slug, status, email_count, created_at, updated_at, scheduled_at, delivered_at 
+             FROM $table 
+             ORDER BY created_at DESC"
+        );
+        
         return new WP_REST_Response($campaigns, 200);
     }
 
