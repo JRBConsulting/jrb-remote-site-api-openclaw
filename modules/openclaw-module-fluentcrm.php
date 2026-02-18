@@ -138,7 +138,7 @@ class OpenClaw_FluentCRM_Module {
         register_rest_route('openclaw/v1', '/crm/stats', [
             'methods' => 'GET',
             'callback' => [__CLASS__, 'get_stats'],
-            'permission_callback' => ['OpenClaw_Fluent_Auth', 'check_read']
+            'permission_callback' => function() { return openclaw_verify_token_and_can('crm_reports_read'); }
         ]);
     }
 
