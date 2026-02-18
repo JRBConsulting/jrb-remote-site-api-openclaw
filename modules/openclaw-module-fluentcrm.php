@@ -150,6 +150,13 @@ class OpenClaw_FluentCRM_Module {
             'callback' => [__CLASS__, 'get_stats'],
             'permission_callback' => function() { return openclaw_verify_token_and_can('crm_reports_read'); }
         ]);
+        
+        // Debug - subscriber lists table
+        register_rest_route('openclaw/v1', '/crm/debug/subscriber-lists', [
+            'methods' => 'GET',
+            'callback' => [__CLASS__, 'debug_subscriber_lists'],
+            'permission_callback' => function() { return openclaw_verify_token_and_can('crm_reports_read'); }
+        ]);
     }
 
     // === IMPLEMENTATIONS ===
@@ -233,6 +240,19 @@ class OpenClaw_FluentCRM_Module {
             'created_at' => $s->created_at,
             'custom_values' => $s->custom_values ?? []
         ];
+    }
+    
+    public static function debug_subscriber_lists($request) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'fc_subscriber_lists';
+        
+        $results = $wpdb->get_results("SELECT sl.*, s.email FROM $table sl LEFT JOIN {$wpdb->prefix}fc_subscribers s ON sl.subscriber_id = s.id");
+        
+        return new WP_REST_Response([
+            'table' => $table,
+            'count' => count($results),
+            'records' => $results
+        ], 200);
     }
 
     public static function get_subscriber($request) {
