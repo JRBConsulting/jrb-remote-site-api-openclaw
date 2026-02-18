@@ -104,10 +104,20 @@ class OpenClaw_FluentCRM_Module {
             'callback' => [__CLASS__, 'list_campaigns'],
             'permission_callback' => function() { return openclaw_verify_token_and_can('crm_campaigns_read'); }
         ]);
+        register_rest_route('openclaw/v1', '/crm/campaigns', [
+            'methods' => 'POST',
+            'callback' => [__CLASS__, 'create_campaign'],
+            'permission_callback' => function() { return openclaw_verify_token_and_can('crm_campaigns_create'); }
+        ]);
         register_rest_route('openclaw/v1', '/crm/campaigns/(?P<id>\d+)', [
             'methods' => 'GET',
             'callback' => [__CLASS__, 'get_campaign'],
             'permission_callback' => function() { return openclaw_verify_token_and_can('crm_campaigns_read'); }
+        ]);
+        register_rest_route('openclaw/v1', '/crm/campaigns/(?P<id>\d+)', [
+            'methods' => 'PUT',
+            'callback' => [__CLASS__, 'update_campaign'],
+            'permission_callback' => function() { return openclaw_verify_token_and_can('crm_campaigns_create'); }
         ]);
         register_rest_route('openclaw/v1', '/crm/campaigns/(?P<id>\d+)/send', [
             'methods' => 'POST',
@@ -363,6 +373,138 @@ class OpenClaw_FluentCRM_Module {
         );
         
         return new WP_REST_Response($campaigns, 200);
+    }
+
+    public static function create_campaign($request) {
+        global $wpdb;
+        $data = $request->get_json_params();
+        
+        $table = $wpdb->prefix . 'fc_campaigns';
+        
+        // Required fields
+        $title = sanitize_text_field($data['title'] ?? '');
+        if (empty($title)) {
+            return new WP_REST_Response(['error' => 'Campaign title is required'], 400);
+        }
+        
+        // Build campaign data
+        $campaign_data = [
+            'title' => $title,
+            'slug' => sanitize_title($title),
+            'status' => 'draft',
+            'type' => 'campaign',
+            'template_id' => 0,
+            'email_subject' => sanitize_text_field($data['subject'] ?? $title),
+            'email_preheader' => sanitize_text_field($data['preheader'] ?? ''),
+            'email_body' => $data['body_html'] ?? '',  // Full HTML content
+            'email_body_plain' => $data['body_plain'] ?? '',  // Plain text version
+            'from_name' => sanitize_text_field($data['from_name'] ?? get_bloginfo('name')),
+            'from_email' => sanitize_email($data['from_email'] ?? get_option('admin_email')),
+            'reply_to_name' => sanitize_text_field($data['reply_to_name'] ?? ''),
+            'reply_to_email' => sanitize_email($data['reply_to_email'] ?? ''),
+            'created_at' => current_time('mysql'),
+            'updated_at' => current_time('mysql'),
+            'hash' => md5($title . time()),
+            'settings' => json_encode([
+                'list_ids' => $data['list_ids'] ?? [],
+                'tag_ids' => $data['tag_ids'] ?? [],
+                'exclude_list_ids' => $data['exclude_list_ids'] ?? [],
+                'exclude_tag_ids' => $data['exclude_tag_ids'] ?? [],
+            ])
+        ];
+        
+        $inserted = $wpdb->insert($table, $campaign_data);
+        if (!$inserted) {
+            return new WP_REST_Response(['error' => 'Failed to create campaign'], 500);
+        }
+        
+        $campaign_id = $wpdb->insert_id;
+        
+        // Create campaign emails for each subscriber in the target lists
+        $list_ids = $data['list_ids'] ?? [];
+        if (!empty($list_ids)) {
+            // Get subscribers from specified lists
+            $subscribers_table = $wpdb->prefix . 'fc_subscribers';
+            $lists_pivot = $wpdb->prefix . 'fc_subscriber_lists';
+            
+            $list_placeholders = implode(',', array_fill(0, count($list_ids), '%d'));
+            $subscribers = $wpdb->get_results($wpdb->prepare(
+                "SELECT DISTINCT s.id, s.email, s.first_name, s.last_name 
+                 FROM $subscribers_table s 
+                 JOIN $lists_pivot sl ON s.id = sl.subscriber_id 
+                 WHERE sl.list_id IN ($list_placeholders) AND s.status = 'subscribed'",
+                ...$list_ids
+            ));
+            
+            // Create campaign emails (queued for sending)
+            $campaign_emails_table = $wpdb->prefix . 'fc_campaign_emails';
+            foreach ($subscribers as $sub) {
+                $wpdb->insert($campaign_emails_table, [
+                    'campaign_id' => $campaign_id,
+                    'subscriber_id' => $sub->id,
+                    'email' => $sub->email,
+                    'first_name' => $sub->first_name,
+                    'last_name' => $sub->last_name,
+                    'status' => 'pending',
+                    'created_at' => current_time('mysql')
+                ]);
+            }
+            
+            // Update email count
+            $wpdb->update($table, ['email_count' => count($subscribers)], ['id' => $campaign_id]);
+        }
+        
+        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $campaign_id));
+        
+        return new WP_REST_Response([
+            'id' => (int)$campaign->id,
+            'title' => $campaign->title,
+            'status' => $campaign->status,
+            'subject' => $campaign->email_subject,
+            'email_count' => (int)$campaign->email_count,
+            'created_at' => $campaign->created_at
+        ], 201);
+    }
+
+    public static function update_campaign($request) {
+        global $wpdb;
+        $id = (int)$request->get_param('id');
+        $data = $request->get_json_params();
+        
+        $table = $wpdb->prefix . 'fc_campaigns';
+        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $id));
+        
+        if (!$campaign) {
+            return new WP_REST_Response(['error' => 'Campaign not found'], 404);
+        }
+        
+        if ($campaign->status !== 'draft') {
+            return new WP_REST_Response(['error' => 'Only draft campaigns can be updated'], 400);
+        }
+        
+        // Allowed fields to update
+        $allowed_fields = ['title', 'email_subject', 'email_preheader', 'email_body', 
+                          'email_body_plain', 'from_name', 'from_email', 'reply_to_name', 'reply_to_email'];
+        $update_data = array_intersect_key($data, array_flip($allowed_fields));
+        
+        if (empty($update_data)) {
+            return new WP_REST_Response(['error' => 'No valid fields to update'], 400);
+        }
+        
+        // Sanitize
+        foreach ($update_data as $key => $value) {
+            if (strpos($key, 'email') === 0 && strpos($key, 'body') === false) {
+                $update_data[$key] = sanitize_email($value);
+            } elseif ($key !== 'email_body' && $key !== 'email_body_plain') {
+                $update_data[$key] = sanitize_text_field($value);
+            }
+        }
+        
+        $update_data['updated_at'] = current_time('mysql');
+        $wpdb->update($table, $update_data, ['id' => $id]);
+        
+        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $id));
+        return new WP_REST_Response($campaign, 200);
     }
 
     public static function get_campaign($request) {
