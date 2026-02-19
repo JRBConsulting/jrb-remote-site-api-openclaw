@@ -448,14 +448,13 @@ class OpenClaw_FluentCRM_Module {
             $subscribers = $wpdb->get_results($sql);
             
             // Create campaign email records
+            // Note: fc_campaign_emails only needs campaign_id, subscriber_id, status, timestamps
+            // Email/name are fetched from subscribers table when sending
             $insert_errors = [];
             foreach ($subscribers as $sub) {
                 $result = $wpdb->insert($campaign_emails_table, [
                     'campaign_id' => $campaign_id,
                     'subscriber_id' => $sub->id,
-                    'email' => $sub->email,
-                    'first_name' => $sub->first_name,
-                    'last_name' => $sub->last_name,
                     'status' => 'pending',
                     'created_at' => current_time('mysql'),
                     'updated_at' => current_time('mysql')
