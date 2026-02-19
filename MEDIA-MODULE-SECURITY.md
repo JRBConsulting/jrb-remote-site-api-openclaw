@@ -33,7 +33,7 @@
 - Headers: `X-CSRF-Token` or parameter: `csrf_token`
 
 **2. Path Traversal Prevention (CRITICAL)**
-- Fixed filename sanitization to prevent `../`, `./`, `..\\` attacks
+- Fixed filename sanitization to prevent `../`, `./`, `..\` attacks
 - Removes leading dots (hidden files)
 - Blocks PHP extension uploads (.php, .phtml, .phps, etc.)
 
@@ -81,7 +81,7 @@ add_filter('openclaw_allowed_mime_types', function($types) {
 
 ### Upload a file (curl)
 ```bash
-curl -X POST "https://jrbconsulting.au/wp-json/openclaw/v1/media" \
+curl -X POST "https://your-site.com/wp-json/openclaw/v1/media" \
   -H "X-OpenClaw-Token: YOUR_TOKEN" \
   -F "file=@logo-laravel.png" \
   -F "title=Laravel Logo" \
@@ -90,25 +90,17 @@ curl -X POST "https://jrbconsulting.au/wp-json/openclaw/v1/media" \
 
 ### List media
 ```bash
-curl "https://jrbconsulting.au/wp-json/openclaw/v1/media?mime_type=image&per_page=20" \
+curl "https://your-site.com/wp-json/openclaw/v1/media?mime_type=image&per_page=20" \
   -H "X-OpenClaw-Token: YOUR_TOKEN"
 ```
 
 ### Set featured image on post
 ```bash
-curl -X PUT "https://jrbconsulting.au/wp-json/openclaw/v1/posts/123" \
+curl -X PUT "https://your-site.com/wp-json/openclaw/v1/posts/123" \
   -H "X-OpenClaw-Token: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"featured_media": 456}'
 ```
-
----
-
-## Deployment
-
-**DO NOT DEPLOY YET** - Per Joel's instruction, wait until content review is finished.
-
-Package ready: `/workspace/openclaw-api-v2.5.0.zip`
 
 ---
 

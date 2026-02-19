@@ -406,7 +406,7 @@ class OpenClaw_FluentCRM_Module {
             'design_template' => 'simple',
             'email_subject' => sanitize_text_field($data['subject'] ?? $title),
             'email_pre_header' => sanitize_text_field($data['preheader'] ?? ''),
-            'email_body' => wp_kses_post($data['body_html'] ?? ''),  // Sanitize HTML content
+            'email_body' => wp_kses_post($data['email_body'] ?? ''),  // Sanitize HTML content
             'recipients_count' => 0,
             'delay' => 0,
             'utm_status' => 0,
