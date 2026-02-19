@@ -460,6 +460,7 @@ class OpenClaw_FluentCRM_Module {
             } catch (\Exception $e) {
                 // Fall back to manual method with error logged
                 error_log('FluentCRM native campaign creation failed: ' . $e->getMessage());
+                $fluentcrm_error = $e->getMessage();
             }
         }
         
@@ -565,7 +566,8 @@ class OpenClaw_FluentCRM_Module {
                 'insert_errors' => $insert_errors,
                 'campaign_id' => $campaign_id,
                 'list_id' => $list_id,
-                'method' => 'manual_fallback'
+                'method' => 'manual_fallback',
+                'fluentcrm_error' => $fluentcrm_error ?? null
             ];
         }
         
