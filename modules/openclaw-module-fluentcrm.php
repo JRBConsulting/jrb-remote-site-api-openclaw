@@ -371,27 +371,22 @@ class OpenClaw_FluentCRM_Module {
         }
         
         $list_ids = $data['list_ids'] ?? [];
-        $fluentcrm_debug = [];
         
-        // Ensure FluentCRM is loaded
-        if (!class_exists('FluentCRM\App\Models\Campaign') && function_exists('FluentCrm')) {
-            // Try to load FluentCRM
-            do_action('fluentcrm_loaded');
-            
-            // Alternative: manually include if needed
-            $fluentCrmPath = WP_PLUGIN_DIR . '/fluent-crm/fluent-crm.php';
-            if (file_exists($fluentCrmPath)) {
-                // Plugin is active, classes should be available via autoloader
+        // METHOD 1: Use FluentCRM's native Campaign model if available
+        // Try to load FluentCRM if not already loaded
+        if (!class_exists('FluentCRM\App\Models\Campaign')) {
+            $fluentCrmAutoload = WP_PLUGIN_DIR . '/fluent-crm/vendor/autoload.php';
+            if (file_exists($fluentCrmAutoload)) {
+                require_once $fluentCrmAutoload;
+            }
+            // Also try to load the main plugin file to initialize
+            $fluentCrmMain = WP_PLUGIN_DIR . '/fluent-crm/fluent-crm.php';
+            if (file_exists($fluentCrmMain) && !function_exists('FluentCrm')) {
+                require_once $fluentCrmMain;
             }
         }
         
-        // METHOD 1: Use FluentCRM's native Campaign model if available
-        $class_exists = class_exists('FluentCRM\App\Models\Campaign');
-        $fluentcrm_debug['class_exists'] = $class_exists;
-        $fluentcrm_debug['list_ids_empty'] = empty($list_ids);
-        $fluentcrm_debug['fluentcrm_function'] = function_exists('FluentCrm');
-        
-        if ($class_exists && !empty($list_ids)) {
+        if (class_exists('FluentCRM\App\Models\Campaign') && !empty($list_ids)) {
             try {
                 // Build settings array like FluentCRM expects
                 $settings = [
@@ -584,9 +579,7 @@ class OpenClaw_FluentCRM_Module {
                 'insert_errors' => $insert_errors,
                 'campaign_id' => $campaign_id,
                 'list_id' => $list_id,
-                'method' => 'manual_fallback',
-                'fluentcrm_debug' => $fluentcrm_debug,
-                'fluentcrm_error' => $fluentcrm_error ?? null
+                'method' => 'manual_fallback'
             ];
         }
         
