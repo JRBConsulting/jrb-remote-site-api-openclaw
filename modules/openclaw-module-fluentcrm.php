@@ -631,7 +631,6 @@ class OpenClaw_FluentCRM_Module {
             'note' => 'FluentCRM will process emails via its scheduled tasks. May take a few minutes.',
             '_debug' => ['send_error' => $send_error]
         ], 200);
-        ], 200);
     }
 
     public static function list_sequences($request) {
