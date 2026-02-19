@@ -416,14 +416,8 @@ class OpenClaw_FluentCRM_Module {
         ];
         
         $inserted = $wpdb->insert($table, $campaign_data);
-        if (!$inserted || $wpdb->insert_id == 0) {
-            return new WP_REST_Response([
-                'error' => 'Failed to create campaign',
-                'wpdb_error' => $wpdb->last_error,
-                'inserted' => $inserted,
-                'insert_id' => $wpdb->insert_id,
-                'table' => $table
-            ], 500);
+        if (!$inserted) {
+            return new WP_REST_Response(['error' => 'Failed to create campaign', 'wpdb_error' => $wpdb->last_error], 500);
         }
         
         $campaign_id = $wpdb->insert_id;
@@ -431,7 +425,6 @@ class OpenClaw_FluentCRM_Module {
         // Create campaign emails for subscribers in target lists
         $list_ids = $data['list_ids'] ?? [];
         $subscriber_count = 0;
-        $debug_info = null;
         
         if (!empty($list_ids)) {
             $campaign_emails_table = $wpdb->prefix . 'fc_campaign_emails';
@@ -452,19 +445,10 @@ class OpenClaw_FluentCRM_Module {
                  FROM $subscribers_table s $join $where";
             
             $subscribers = $wpdb->get_results($sql);
-            
-            // DEBUG: Log the query and results
-            $debug_info = [
-                'sql' => $sql,
-                'subscribers_found' => count($subscribers),
-                'last_error' => $wpdb->last_error,
-                'list_id' => $list_id
-            ];
-            error_log("OpenClaw API DEBUG: " . json_encode($debug_info));
+            error_log("OpenClaw API campaign SQL: $sql");
+            error_log("OpenClaw API campaign results: " . count($subscribers));
             
             // Create campaign email records
-            $inserted_count = 0;
-            $insert_errors = [];
             foreach ($subscribers as $sub) {
                 $result = $wpdb->insert($campaign_emails_table, [
                     'campaign_id' => $campaign_id,
@@ -478,18 +462,11 @@ class OpenClaw_FluentCRM_Module {
                 ]);
                 if ($result !== false) {
                     $subscriber_count++;
-                    $inserted_count++;
-                } else {
-                    $insert_errors[] = $wpdb->last_error;
                 }
             }
             
             // Update the CAMPAIGNS table (not subscribers table)
             $wpdb->update($wpdb->prefix . 'fc_campaigns', ['recipients_count' => $subscriber_count], ['id' => $campaign_id]);
-            
-            // DEBUG: Update debug info with insert results
-            $debug_info['subscribers_inserted'] = $inserted_count;
-            $debug_info['insert_errors'] = $insert_errors;
             error_log("OpenClaw API campaign final count: $subscriber_count");
         }
         
@@ -502,8 +479,7 @@ class OpenClaw_FluentCRM_Module {
             'subject' => $campaign->email_subject,
             'recipients_count' => (int)$campaign->recipients_count,
             'created_at' => $campaign->created_at,
-            'message' => 'Campaign created as draft. Use /crm/campaigns/{id}/send to send it.',
-            '_debug' => $debug_info ?? null
+            'message' => 'Campaign created as draft. Use /crm/campaigns/{id}/send to send it.'
         ], 201);
     }
 
