@@ -165,19 +165,18 @@ class OpenClaw_FluentCRM_Module {
         $status = $request->get_param('status') ? sanitize_text_field($request->get_param('status')) : null;
         
         $table = $wpdb->prefix . 'fc_subscribers';
-        $lists_pivot = $wpdb->prefix . 'fc_subscriber_lists';
-        $tags_pivot = $wpdb->prefix . 'fc_subscriber_tags';
+        $pivot_table = $wpdb->prefix . 'fc_subscriber_pivot';
         
         $where = 'WHERE 1=1';
         $join = '';
         
         if ($list_id) {
-            $join .= " JOIN $lists_pivot sl ON s.id = sl.subscriber_id";
-            $where .= $wpdb->prepare(' AND sl.list_id = %d', $list_id);
+            $join .= " JOIN $pivot_table sl ON s.id = sl.subscriber_id AND sl.object_type = 'list'";
+            $where .= $wpdb->prepare(' AND sl.object_id = %d', $list_id);
         }
         if ($tag_id) {
-            $join .= " JOIN $tags_pivot st ON s.id = st.subscriber_id";
-            $where .= $wpdb->prepare(' AND st.tag_id = %d', $tag_id);
+            $join .= " JOIN $pivot_table st ON s.id = st.subscriber_id AND st.object_type = 'tag'";
+            $where .= $wpdb->prepare(' AND st.object_id = %d', $tag_id);
         }
         if ($status) {
             $where .= $wpdb->prepare(' AND s.status = %s', $status);
