@@ -371,9 +371,14 @@ class OpenClaw_FluentCRM_Module {
         }
         
         $list_ids = $data['list_ids'] ?? [];
+        $fluentcrm_debug = [];
         
         // METHOD 1: Use FluentCRM's native Campaign model if available
-        if (class_exists('FluentCRM\App\Models\Campaign') && !empty($list_ids)) {
+        $class_exists = class_exists('FluentCRM\App\Models\Campaign');
+        $fluentcrm_debug['class_exists'] = $class_exists;
+        $fluentcrm_debug['list_ids_empty'] = empty($list_ids);
+        
+        if ($class_exists && !empty($list_ids)) {
             try {
                 // Build settings array like FluentCRM expects
                 $settings = [
@@ -567,6 +572,7 @@ class OpenClaw_FluentCRM_Module {
                 'campaign_id' => $campaign_id,
                 'list_id' => $list_id,
                 'method' => 'manual_fallback',
+                'fluentcrm_debug' => $fluentcrm_debug,
                 'fluentcrm_error' => $fluentcrm_error ?? null
             ];
         }
