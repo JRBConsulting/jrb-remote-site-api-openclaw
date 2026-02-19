@@ -605,13 +605,26 @@ class OpenClaw_FluentCRM_Module {
                     }
                 }
                 
-                // Method 2: Trigger status change hook
+                // Method 2: Try to run campaign processor
+                if ($emails_sent == 0 && method_exists($campaignModel, 'process')) {
+                    try {
+                        $campaignModel->process();
+                        $emails_sent = $email_count;
+                    } catch (\Exception $e) {
+                        // Silent fail
+                    }
+                }
+                
+                // Method 3: Trigger status change hook
                 do_action('fluentcrm_campaign_status_changed', $campaignModel, 'pending');
             }
         }
         
-        // Method 3: Also trigger general campaign process hook
+        // Method 4: Also trigger general campaign process hook
         do_action('fluentcrm_scheduled_hourly_tasks');
+        
+        // Method 5: Trigger specific email send hook if available
+        do_action('fluentcrm_send_campaign_emails', $id);
         
         if ($emails_sent > 0) {
             return new WP_REST_Response([
