@@ -375,8 +375,6 @@ class OpenClaw_FluentCRM_Module {
         // METHOD 1: Use FluentCRM's native Campaign model if available
         if (class_exists('FluentCRM\App\Models\Campaign') && !empty($list_ids)) {
             try {
-                $campaignModel = new \FluentCRM\App\Models\Campaign();
-                
                 // Build settings array like FluentCRM expects
                 $settings = [
                     'mailer_settings' => [
@@ -413,15 +411,36 @@ class OpenClaw_FluentCRM_Module {
                     'created_by' => get_current_user_id() ?: 1
                 ];
                 
-                // Use FluentCRM's create method
-                $campaign = $campaignModel->create($campaignData);
+                // Use FluentCRM's create method - STATIC call
+                $campaign = \FluentCRM\App\Models\Campaign::create($campaignData);
                 
-                if ($campaign && $campaign->id) {
+                if ($campaign && !is_wp_error($campaign) && $campaign->id) {
                     // Now populate campaign emails using FluentCRM's method
+                    $synced = false;
                     if (method_exists($campaign, 'syncRecipients')) {
                         $campaign->syncRecipients();
+                        $synced = true;
                     } elseif (method_exists($campaign, 'populateCampaignEmails')) {
                         $campaign->populateCampaignEmails();
+                        $synced = true;
+                    } else {
+                        // Try to manually populate using FluentCRM's pivot methods
+                        $listId = (int)$list_ids[0];
+                        $subscribers = \FluentCRM\App\Models\Subscriber::whereHas('lists', function($q) use ($listId) {
+                            $q->where('id', $listId);
+                        })->get();
+                        
+                        foreach ($subscribers as $subscriber) {
+                            \FluentCRM\App\Models\CampaignEmail::create([
+                                'campaign_id' => $campaign->id,
+                                'subscriber_id' => $subscriber->id,
+                                'email' => $subscriber->email,
+                                'first_name' => $subscriber->first_name,
+                                'last_name' => $subscriber->last_name,
+                                'status' => 'pending'
+                            ]);
+                        }
+                        $synced = true;
                     }
                     
                     // Refresh to get updated recipient count
@@ -435,11 +454,11 @@ class OpenClaw_FluentCRM_Module {
                         'recipients_count' => (int)$campaign->recipients_count,
                         'created_at' => $campaign->created_at,
                         'message' => 'Campaign created using FluentCRM native methods.',
-                        '_debug' => ['method' => 'fluentcrm_native']
+                        '_debug' => ['method' => 'fluentcrm_native', 'synced' => $synced]
                     ], 200);
                 }
             } catch (\Exception $e) {
-                // Fall back to manual method
+                // Fall back to manual method with error logged
                 error_log('FluentCRM native campaign creation failed: ' . $e->getMessage());
             }
         }
