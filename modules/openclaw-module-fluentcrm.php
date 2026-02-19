@@ -443,9 +443,11 @@ class OpenClaw_FluentCRM_Module {
                  FROM $subscribers_table s 
                  INNER JOIN $pivot_table p ON s.id = p.subscriber_id 
                  WHERE p.object_id IN ($list_ids_string) 
-                 AND p.object_type = 'list'"
+                 AND p.object_type = 'list'";
             
             $subscribers = $wpdb->get_results($sql);
+            error_log("OpenClaw API - SQL Query: " . $sql);
+            error_log("OpenClaw API - Found " . count($subscribers) . " subscribers");
             
             // Create campaign email records
             foreach ($subscribers as $sub) {
@@ -459,8 +461,8 @@ class OpenClaw_FluentCRM_Module {
                     'created_at' => current_time('mysql'),
                     'updated_at' => current_time('mysql')
                 ]);
-                error_log("OpenClaw API - Insert result for {$sub->email}: " . ($insert_result ? "success" : "failed: " . $wpdb->last_error));
-                if ($insert_result) {
+                error_log("OpenClaw API - Insert result for {$sub->email}: " . ($insert_result !== false ? "success" : "failed: " . $wpdb->last_error));
+                if ($insert_result !== false) {
                     $subscriber_count++;
                 }
             }
