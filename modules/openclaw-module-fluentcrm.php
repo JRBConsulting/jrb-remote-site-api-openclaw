@@ -264,9 +264,9 @@ class OpenClaw_FluentCRM_Module {
     }
 
     public static function create_subscriber($request) {
-        $data = $request->get_json_params();
+        $params = $request->get_json_params();
 
-        $email = sanitize_email($data['email'] ?? '');
+        $email = sanitize_email($params['email'] ?? '');
         if (empty($email) || !is_email($email)) {
             return new WP_REST_Response(['error' => 'Valid email is required'], 400);
         }
@@ -281,20 +281,34 @@ class OpenClaw_FluentCRM_Module {
         }
 
         $allowed_statuses = ['subscribed', 'unsubscribed', 'pending', 'bounced'];
-        $status = sanitize_text_field($data['status'] ?? 'subscribed');
+        $status = sanitize_text_field($params['status'] ?? 'subscribed');
         if (!in_array($status, $allowed_statuses, true)) {
             $status = 'subscribed';
         }
 
-        $subscriber = \FluentCRM\App\Models\Subscriber::create([
-            'email' => $email,
-            'first_name' => sanitize_text_field($data['first_name'] ?? ''),
-            'last_name' => sanitize_text_field($data['last_name'] ?? ''),
-            'status' => $status,
-            'custom_values' => $data['custom_values'] ?? []
-        ]);
+        // Map zip/postal_code
+        $zip = sanitize_text_field($params['zip'] ?? $params['postal_code'] ?? '');
+        $postal_code = $zip;
 
-        if (!empty($data['lists'])) {
+        $subscriber_data = [
+            'email' => $email,
+            'first_name' => sanitize_text_field($params['first_name'] ?? ''),
+            'last_name' => sanitize_text_field($params['last_name'] ?? ''),
+            'status' => $status,
+            'phone' => sanitize_text_field($params['phone'] ?? ''),
+            'address_line_1' => sanitize_text_field($params['address_line_1'] ?? ''),
+            'address_line_2' => sanitize_text_field($params['address_line_2'] ?? ''),
+            'city' => sanitize_text_field($params['city'] ?? ''),
+            'state' => sanitize_text_field($params['state'] ?? ''),
+            'country' => sanitize_text_field($params['country'] ?? ''),
+            'zip' => $zip,
+            'postal_code' => $postal_code,
+            'custom_values' => $params['custom_values'] ?? []
+        ];
+
+        $subscriber = \FluentCRM\App\Models\Subscriber::create($subscriber_data);
+
+        if (!empty($params['lists'])) {
             $subscriber->lists()->sync($data['lists']);
         }
         if (!empty($data['tags'])) {
@@ -318,8 +332,15 @@ class OpenClaw_FluentCRM_Module {
 
         // Whitelist allowed fields to prevent mass assignment
         $allowed_fields = ['first_name', 'last_name', 'email', 'status', 'phone', 'address_line_1', 
-                          'address_line_2', 'city', 'state', 'country', 'zip', 'date_of_birth', 'source', 'custom_values'];
+                          'address_line_2', 'city', 'state', 'country', 'zip', 'postal_code', 'date_of_birth', 'source', 'custom_values'];
         $data = array_intersect_key($params, array_flip($allowed_fields));
+        
+        // Handle zip/postal_code mapping
+        if (isset($data['zip']) && !isset($data['postal_code'])) {
+            $data['postal_code'] = $data['zip'];
+        } elseif (isset($data['postal_code']) && !isset($data['zip'])) {
+            $data['zip'] = $data['postal_code'];
+        }
         
         if (empty($data) && empty($params['lists']) && empty($params['tags'])) {
             return new WP_REST_Response(['error' => 'No valid fields to update'], 400);
