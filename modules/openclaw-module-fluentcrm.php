@@ -260,7 +260,10 @@ class OpenClaw_FluentCRM_Module {
             return new WP_REST_Response(['error' => 'Subscriber not found'], 404);
         }
 
-        return new WP_REST_Response(self::format_subscriber($subscriber), 200);
+        $formatted = self::format_subscriber($subscriber);
+        $formatted['debug_attributes'] = $subscriber->getAttributes();
+
+        return new WP_REST_Response($formatted, 200);
     }
 
     public static function create_subscriber($request) {
