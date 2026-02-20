@@ -220,7 +220,7 @@ class OpenClaw_FluentCRM_Module {
     }
 
     public static function format_subscriber($s) {
-        return [
+        $data = [
             'id' => $s->id,
             'email' => $s->email,
             'first_name' => $s->first_name,
@@ -234,11 +234,22 @@ class OpenClaw_FluentCRM_Module {
             'state' => $s->state ?? '',
             'country' => $s->country ?? '',
             'zip' => $s->zip ?? '',
-            'lists' => $s->lists ? $s->lists->map(function($l) { return ['id' => $l->id, 'title' => $l->title]; }) : [],
-            'tags' => $s->tags ? $s->tags->map(function($t) { return ['id' => $t->id, 'title' => $t->title]; }) : [],
+            'postal_code' => $s->postal_code ?? '',
+            'lists' => [],
+            'tags' => [],
             'created_at' => $s->created_at,
             'custom_values' => $s->custom_values ?? []
         ];
+
+        if (isset($s->lists) && method_exists($s->lists, 'map')) {
+            $data['lists'] = $s->lists->map(function($l) { return ['id' => $l->id, 'title' => $l->title]; });
+        }
+
+        if (isset($s->tags) && method_exists($s->tags, 'map')) {
+            $data['tags'] = $s->tags->map(function($t) { return ['id' => $t->id, 'title' => $t->title]; });
+        }
+
+        return $data;
     }
 
     public static function get_subscriber($request) {
