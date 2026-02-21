@@ -534,7 +534,7 @@ class OpenClaw_FluentProject_Module {
 
     private static function log($message) {
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("[OpenClaw FluentProject Module] {$message}");
+            
         }
     }
 

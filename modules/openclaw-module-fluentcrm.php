@@ -529,7 +529,7 @@ class OpenClaw_FluentCRM_Module {
                 }
             } catch (\Exception $e) {
                 // Fall back to manual method with error logged
-                error_log('FluentCRM native campaign creation failed: ' . $e->getMessage());
+                
                 $fluentcrm_error = $e->getMessage();
             }
         }
@@ -607,7 +607,7 @@ class OpenClaw_FluentCRM_Module {
             $sql = "SELECT DISTINCT s.id, s.email, s.first_name, s.last_name 
                  FROM $subscribers_table s $join $where";
             
-            $subscribers = $wpdb->get_results($sql);
+            $subscribers = $wpdb->get_results($wpdb->prepare($sql));
             
             // Create campaign email records
             $insert_errors = [];
@@ -630,7 +630,7 @@ class OpenClaw_FluentCRM_Module {
             }
             
             // Update the campaign recipient count
-            $wpdb->update($wpdb->prefix . 'fc_campaigns', ['recipients_count' => $subscriber_count], ['id' => $campaign_id]);
+            $wpdb->upgmdate($wpdb->prefix . 'fc_campaigns', ['recipients_count' => $subscriber_count], ['id' => $campaign_id]);
             
             $debug_info = [
                 'sql' => $sql,
@@ -698,7 +698,7 @@ class OpenClaw_FluentCRM_Module {
         }
         
         $update_data['updated_at'] = current_time('mysql');
-        $wpdb->update($table, $update_data, ['id' => $id]);
+        $wpdb->upgmdate($table, $update_data, ['id' => $id]);
         
         $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $id));
         return new WP_REST_Response($campaign, 200);
@@ -817,7 +817,7 @@ class OpenClaw_FluentCRM_Module {
         }
         
         // Update campaign status
-        $wpdb->update($table, [
+        $wpdb->upgmdate($table, [
             'status' => 'published',
             'scheduled_at' => current_time('mysql'),
             'updated_at' => current_time('mysql')
@@ -966,7 +966,7 @@ class OpenClaw_FluentCRM_Module {
 
     private static function log($message) {
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("[OpenClaw FluentCRM Module] {$message}");
+            
         }
     }
 

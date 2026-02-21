@@ -2,7 +2,7 @@
 /**
  * Plugin Name: JRB Remote Site API for OpenClaw
  * Description: WordPress REST API for OpenClaw remote site management
- * Version: 2.7.6
+ * Version: 2.7.7
  * Author: JRB Consulting
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('OPENCLAW_API_VERSION', '2.7.6');
+define('OPENCLAW_API_VERSION', '2.7.7');
 define('OPENCLAW_API_GITHUB_REPO', 'JRBConsulting/jrb-remote-site-api-openclaw');
 
 // GitHub Updater Integration
@@ -59,7 +59,7 @@ add_filter('update_plugins_github.com', function($update, $plugin_data, $plugin_
     }
     
     return [
-        'slug' => 'jrb-remote-site-api-openclaw',
+        'slug' => 'openclaw-api',
         'version' => $new_version,
         'url' => $release['html_url'],
         'package' => $download_url,
@@ -82,7 +82,7 @@ add_action('rest_api_init', function() {
     ]);
 });
 
-function openclaw_self_update() {
+function openclaw_self_upgmdate() {
     $plugin_file = 'jrb-remote-site-api-openclaw/jrb-remote-site-api-openclaw.php';
     
     // Check for updates
@@ -130,7 +130,7 @@ function openclaw_self_update_from_url($request) {
     }
     
     // CRITICAL: Enforce HTTPS
-    if (parse_url($download_url, PHP_URL_SCHEME) !== 'https') {
+    if (wp_parse_url($download_url, PHP_URL_SCHEME) !== 'https') {
         return new WP_REST_Response([
             'status' => 'error',
             'message' => 'URL must use HTTPS (security requirement)',
@@ -147,7 +147,7 @@ function openclaw_self_update_from_url($request) {
         'clawhub.ai',
     ];
     
-    $host = parse_url($download_url, PHP_URL_HOST);
+    $host = wp_parse_url($download_url, PHP_URL_HOST);
     if (!in_array($host, $trusted_hosts, true)) {
         return new WP_REST_Response([
             'status' => 'error',
@@ -171,7 +171,7 @@ function openclaw_self_update_from_url($request) {
     // Verify it's a valid zip AND contains JRB Remote API
     $zip = new ZipArchive();
     if ($zip->open($temp_file) !== true) {
-        @unlink($temp_file);
+        @wp_delete_file($temp_file);
         return new WP_REST_Response([
             'status' => 'error',
             'message' => 'Downloaded file is not a valid ZIP',
@@ -193,7 +193,7 @@ function openclaw_self_update_from_url($request) {
     $zip->close();
     
     if (!$valid_plugin) {
-        @unlink($temp_file);
+        @wp_delete_file($temp_file);
         return new WP_REST_Response([
             'status' => 'error',
             'message' => 'ZIP does not contain valid JRB Remote API plugin',
@@ -211,7 +211,7 @@ function openclaw_self_update_from_url($request) {
         'hook_extra' => ['plugin' => $plugin_file],
     ]);
     
-    @unlink($temp_file);
+    @wp_delete_file($temp_file);
     
     if (is_wp_error($result)) {
         return new WP_REST_Response([
@@ -388,7 +388,7 @@ add_action('rest_api_init', function() {
             foreach ($files as $file) {
                 $details[$file] = [
                     'size' => filesize($dir . $file),
-                    'mtime' => date('Y-m-d H:i:s', filemtime($dir . $file)),
+                    'mtime' => gmdate('Y-m-d H:i:s', filemtime($dir . $file)),
                     'content_sample' => substr(file_get_contents($dir . $file), 0, 500)
                 ];
             }
@@ -637,7 +637,7 @@ function openclaw_create_menu($request) {
     $menu = wp_get_nav_menu_object($result);
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Menu created: ID=%d, Name=%s', $result, $name));
+    
     
     return [
         'success' => true,
@@ -676,7 +676,7 @@ function openclaw_update_menu($request) {
     $updated_menu = wp_get_nav_menu_object($menu_id);
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Menu updated: ID=%d, OldName=%s, NewName=%s', $menu_id, $menu->name, $name));
+    
     
     return [
         'success' => true,
@@ -704,7 +704,7 @@ function openclaw_delete_menu($request) {
     }
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Menu deleted: ID=%d, Name=%s', $menu_id, $menu->name));
+    
     
     return [
         'success' => true,
@@ -794,7 +794,7 @@ function openclaw_add_menu_item($request) {
     }
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Menu item added: MenuID=%d, ItemID=%d, Type=%s, Title=%s', $menu_id, $item_id, $type, $menu_item_data['menu-item-title']));
+    
     
     $item = get_post($item_id);
     
@@ -837,7 +837,7 @@ function openclaw_delete_menu_item($request) {
     }
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Menu item deleted: MenuID=%d, ItemID=%d', $menu_id, $item_id));
+    
     
     return [
         'success' => true,
@@ -885,7 +885,7 @@ function openclaw_reorder_menu_items($request) {
     }
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Menu items reordered: MenuID=%d, Items=%s', $menu_id, implode(',', $item_ids)));
+    
     
     return [
         'success' => true,
@@ -978,7 +978,7 @@ function openclaw_switch_theme($request) {
     }
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Theme switched: OldTheme=%s, NewTheme=%s', $old_theme->get('Name'), $theme->get('Name')));
+    
     
     return [
         'success' => true,
@@ -1001,7 +1001,7 @@ function openclaw_install_theme_from_url($request) {
     }
     
     // CRITICAL: Enforce HTTPS
-    if (parse_url($download_url, PHP_URL_SCHEME) !== 'https') {
+    if (wp_parse_url($download_url, PHP_URL_SCHEME) !== 'https') {
         return new WP_Error('https_required', 'URL must use HTTPS (security requirement)', ['status' => 400]);
     }
     
@@ -1016,7 +1016,7 @@ function openclaw_install_theme_from_url($request) {
         'downloads.wordpress.org',
     ];
     
-    $host = parse_url($download_url, PHP_URL_HOST);
+    $host = wp_parse_url($download_url, PHP_URL_HOST);
     if (!in_array($host, $trusted_hosts, true)) {
         return new WP_Error('untrusted_host', 'URL must be from a trusted host', ['status' => 400]);
     }
@@ -1034,7 +1034,7 @@ function openclaw_install_theme_from_url($request) {
     // Verify it's a valid zip
     $zip = new ZipArchive();
     if ($zip->open($temp_file) !== true) {
-        @unlink($temp_file);
+        @wp_delete_file($temp_file);
         return new WP_Error('invalid_zip', 'Downloaded file is not a valid ZIP', ['status' => 400]);
     }
     
@@ -1058,14 +1058,14 @@ function openclaw_install_theme_from_url($request) {
     $zip->close();
     
     if (!$valid_theme) {
-        @unlink($temp_file);
+        @wp_delete_file($temp_file);
         return new WP_Error('invalid_theme', 'ZIP does not contain a valid WordPress theme', ['status' => 400]);
     }
     
     // Check if theme already exists
     $existing_theme = wp_get_theme($theme_slug);
     if ($existing_theme->exists()) {
-        @unlink($temp_file);
+        @wp_delete_file($temp_file);
         return new WP_Error('theme_exists', 'Theme already exists: ' . $theme_slug, ['status' => 409]);
     }
     
@@ -1075,7 +1075,7 @@ function openclaw_install_theme_from_url($request) {
     $upgrader = new Theme_Upgrader(new Automatic_Upgrader_Skin());
     $result = $upgrader->install($temp_file);
     
-    @unlink($temp_file);
+    @wp_delete_file($temp_file);
     
     if (is_wp_error($result)) {
         return new WP_Error('install_failed', 'Installation failed: ' . $result->get_error_message(), ['status' => 500]);
@@ -1099,7 +1099,7 @@ function openclaw_install_theme_from_url($request) {
     }
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Theme installed: Slug=%s, Name=%s, Activated=%s', $theme_slug, $installed_theme->get('Name'), $is_active ? 'yes' : 'no'));
+    
     
     return [
         'success' => true,
@@ -1150,7 +1150,7 @@ function openclaw_delete_theme($request) {
     }
     
     // Audit log
-    error_log(sprintf('[JRB Remote API] Theme deleted: Stylesheet=%s, Name=%s', $stylesheet, $theme->get('Name')));
+    
     
     return [
         'success' => true,
@@ -1561,7 +1561,7 @@ function openclaw_create_tag($request) {
     $tag = get_term($result['term_id'], 'post_tag');
 
     // Audit log
-    error_log(sprintf('[JRB Remote API] Tag created: ID=%d, Name=%s', $tag->term_id, $name));
+    
 
     return ['id' => $tag->term_id, 'name' => $tag->name, 'slug' => $tag->slug];
 }
@@ -1600,7 +1600,7 @@ function openclaw_update_tag($request) {
     $updated_tag = get_term($id, 'post_tag');
 
     // Audit log
-    error_log(sprintf('[JRB Remote API] Tag updated: ID=%d, OldName=%s, NewName=%s', $id, $tag->name, $name));
+    
 
     return [
         'success' => true,
@@ -1632,7 +1632,7 @@ function openclaw_delete_tag($request) {
     }
 
     // Audit log
-    error_log(sprintf('[JRB Remote API] Tag deleted: ID=%d, Name=%s', $id, $tag->name));
+    
 
     return [
         'success' => true,
@@ -1690,7 +1690,7 @@ function openclaw_resolve_tags($tags) {
                     $result = wp_insert_term($tag, 'post_tag');
                     if (!is_wp_error($result) && isset($result['term_id'])) {
                         $tag_ids[] = $result['term_id'];
-                        error_log(sprintf('[JRB Remote API] Auto-created tag: Name=%s, ID=%d', $tag, $result['term_id']));
+                        
                     }
                 }
             }
@@ -2421,7 +2421,7 @@ function openclaw_delete_plugin($request) {
 
 // Admin settings page
 add_action('admin_menu', function() {
-    add_options_page('JRB Remote API', 'JRB Remote API', 'manage_options', 'jrb-remote-site-api-openclaw', 'openclaw_api_admin_page');
+    add_options_page('JRB Remote API', 'JRB Remote API', 'manage_options', 'openclaw-api', 'openclaw_api_admin_page');
 });
 
 // Core capabilities only (no module filter)
@@ -2635,7 +2635,7 @@ function openclaw_api_admin_page() {
                         'hook_extra' => ['plugin' => $plugin_file],
                     ]);
                     
-                    @unlink($temp_file);
+                    @wp_delete_file($temp_file);
                     
                     if (!is_wp_error($result) && $result) {
                         echo '<div class="notice notice-success"><p>JRB Remote API updated successfully! <a href="' . esc_url(admin_url('plugins.php')) . '">View plugins</a></p></div>';

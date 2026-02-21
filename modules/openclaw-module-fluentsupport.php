@@ -156,7 +156,7 @@ class OpenClaw_FluentSupport_Module {
     private static function create_response_native($ticket_id, $content, $agent_id) {
         // Check if FluentSupport ResponseService is available
         if (!class_exists('FluentSupport\App\Services\Tickets\ResponseService')) {
-            error_log('FluentSupport ResponseService not available');
+            
             return null;
         }
         
@@ -164,7 +164,7 @@ class OpenClaw_FluentSupport_Module {
             // Get the ticket
             $ticket = \FluentSupport\App\Models\Ticket::find($ticket_id);
             if (!$ticket) {
-                error_log('FluentSupport ticket not found: ' . $ticket_id);
+                
                 return null;
             }
             
@@ -174,7 +174,7 @@ class OpenClaw_FluentSupport_Module {
                 $agent = \FluentSupport\App\Models\Agent::find($agent_id);
             }
             if (!$agent) {
-                error_log('FluentSupport agent not found: ' . $agent_id);
+                
                 return null;
             }
             
@@ -190,10 +190,10 @@ class OpenClaw_FluentSupport_Module {
                 return $result['response']->id;
             }
             
-            error_log('FluentSupport ResponseService failed to create response');
+            
             return null;
         } catch (\Exception $e) {
-            error_log('FluentSupport ResponseService error: ' . $e->getMessage());
+            
             return null;
         }
     }
@@ -417,7 +417,7 @@ class OpenClaw_FluentSupport_Module {
             $update_data['agent_id'] = (int)$data['agent_id'];
         }
         
-        $wpdb->update($tickets_table, $update_data, ['id' => $ticket_id]);
+        $wpdb->upgmdate($tickets_table, $update_data, ['id' => $ticket_id]);
         
         do_action('fluent_support_ticket_status_changed', $ticket_id, $data['status'] ?? null);
         
@@ -496,7 +496,7 @@ class OpenClaw_FluentSupport_Module {
         }
         
         // Update ticket status and timestamp
-        $wpdb->update($tickets_table, [
+        $wpdb->upgmdate($tickets_table, [
             'status' => 'waiting_customer',
             'updated_at' => current_time('mysql'),
         ], ['id' => $ticket_id]);
@@ -604,7 +604,7 @@ class OpenClaw_FluentSupport_Module {
         }
         
         $tickets_table = $wpdb->prefix . 'fs_tickets';
-        $wpdb->update($tickets_table, [
+        $wpdb->upgmdate($tickets_table, [
             'agent_id' => $agent_id,
             'updated_at' => current_time('mysql'),
         ], ['id' => $ticket_id]);
@@ -850,7 +850,7 @@ class OpenClaw_FluentSupport_Module {
 
     private static function log($message) {
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("[OpenClaw FluentSupport Module] {$message}");
+            
         }
     }
 

@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) exit;
 // Auth helper must load first
 require_once __DIR__ . '/openclaw-module-auth.php';
 
-$modules = [
+$openclaw_modules = [
     'openclaw-module-media.php',
     'openclaw-module-fluentforms.php',
     'openclaw-module-fluentcommunity.php',
@@ -22,8 +22,8 @@ $modules = [
     'openclaw-module-publishpress.php',
 ];
 
-foreach ($modules as $module) {
-    $path = __DIR__ . '/' . $module;
+foreach ($openclaw_modules as $openclaw_module) {
+    $path = __DIR__ . '/' . $openclaw_module;
     if (file_exists($path)) {
         require_once $path;
     }
@@ -34,7 +34,7 @@ foreach ($modules as $module) {
  */
 add_action('admin_footer-settings_page_jrb-remote-site-api-openclaw', function() {
     // Use centralized detection function
-    $modules = [
+    $openclaw_modules = [
         'Media' => [
             'active' => true, // Always active - core WordPress feature
             'endpoints' => 'Upload, list, update, delete media files',
@@ -71,7 +71,7 @@ add_action('admin_footer-settings_page_jrb-remote-site-api-openclaw', function()
             '<p style="color:#666;">Modules activate automatically when their required plugin is installed.</p>' +
             '<table class="widefat" style="max-width:600px;"><thead><tr><th>Module</th><th>Status</th><th>Endpoints</th></tr></thead><tbody>';
         
-        <?php foreach ($modules as $name => $info): ?>
+        <?php foreach ($openclaw_modules as $name => $info): ?>
             var statusHtml = <?php echo $info['active'] ? "'<span style=\"color:green;font-weight:bold;\">✓ Active</span>'" : "'<span style=\"color:#999;\">Not installed</span>'"; ?>;
             modulesHtml += '<tr>' +
                 '<td><strong><?php echo esc_js($name); ?></strong></td>' +

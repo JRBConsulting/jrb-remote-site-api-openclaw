@@ -94,8 +94,8 @@ add_action('rest_api_init', function() {
             $token = null;
             if (isset($_SERVER['HTTP_X_CSRF_TOKEN'])) {
                 $token = sanitize_text_field(wp_unslash($_SERVER['HTTP_X_CSRF_TOKEN']));
-            } elseif (isset($_REQUEST['csrf_token'])) {
-                $token = sanitize_text_field($_REQUEST['csrf_token']);
+            } elseif (isset(wp_unslash($_REQUEST['csrf_token']))) {
+                $token = sanitize_text_field(wp_unslash($_REQUEST['csrf_token']));
             }
             
             // For API calls, we check capability but allow requests without CSRF
@@ -277,7 +277,7 @@ function openclaw_validate_svg($file_path) {
     if ($file_size > $max_size) {
         return new WP_Error(
             'svg_too_large',
-            sprintf(__('SVG file exceeds maximum size of %s for validation.', 'jrb-remote-site-api-openclaw'), size_format($max_size))
+            sprintf(__('SVG file exceeds maximum size of %s for validation.', 'openclaw-api'), size_format($max_size))
         );
     }
     
@@ -286,7 +286,7 @@ function openclaw_validate_svg($file_path) {
     if ($content === false) {
         return new WP_Error(
             'svg_read_failed',
-            __('Failed to read SVG file for security validation.', 'jrb-remote-site-api-openclaw')
+            /* translators: %s: placeholder */  __('Failed to read SVG file for security validation.', 'openclaw-api')
         );
     }
     
@@ -332,7 +332,7 @@ function openclaw_validate_svg($file_path) {
         if (preg_match($pattern, $content)) {
             return new WP_Error(
                 'unsafe_svg',
-                __('This SVG file contains potentially unsafe content that could lead to XSS attacks.', 'jrb-remote-site-api-openclaw')
+                /* translators: %s: placeholder */  __('This SVG file contains potentially unsafe content that could lead to XSS attacks.', 'openclaw-api')
             );
         }
     }
@@ -343,7 +343,7 @@ function openclaw_validate_svg($file_path) {
     // Warning but not blocking - configurable
     if ($xml_elements > 5000) {
         // Log warning but allow (could be legitimate complex SVG)
-        error_log(sprintf('OpenClaw Media: Large SVG detected with %d elements', $xml_elements));
+        
     }
     
     return true;
@@ -489,7 +489,7 @@ function openclaw_media_upload($request) {
                     if ($content_length > $max_upload) {
                         return new WP_Error(
                             'content_too_large',
-                            __('Request body exceeds maximum allowed size.', 'jrb-remote-site-api-openclaw'),
+                            /* translators: %s: placeholder */  __('Request body exceeds maximum allowed size.', 'openclaw-api'),
                             ['status' => 413]
                         );
                     }
@@ -501,10 +501,10 @@ function openclaw_media_upload($request) {
                 
                 // Additional size check on raw body
                 if (strlen($body_data) > $max_upload) {
-                    @unlink($temp_path);
+                    @wp_delete_file($temp_path);
                     return new WP_Error(
                         'body_too_large',
-                        __('Request body exceeds maximum allowed size.', 'jrb-remote-site-api-openclaw'),
+                        /* translators: %s: placeholder */  __('Request body exceeds maximum allowed size.', 'openclaw-api'),
                         ['status' => 413]
                     );
                 }
@@ -527,7 +527,7 @@ function openclaw_media_upload($request) {
     if (empty($file) || $file['error'] !== 0) {
         return new WP_Error(
             'upload_error',
-            __('No file uploaded or upload error.', 'jrb-remote-site-api-openclaw'),
+            /* translators: %s: placeholder */  __('No file uploaded or upload error.', 'openclaw-api'),
             ['status' => 400]
         );
     }
@@ -540,7 +540,7 @@ function openclaw_media_upload($request) {
         return new WP_Error(
             'file_too_large',
             sprintf(
-                __('File size exceeds maximum of %s.', 'jrb-remote-site-api-openclaw'),
+                /* translators: %s: placeholder */  __('File size exceeds maximum of %s.', 'openclaw-api'),
                 size_format($max_size)
             ),
             ['status' => 413]
@@ -563,7 +563,7 @@ function openclaw_media_upload($request) {
         // MIME type mismatch - could be a polyglot attack
         return new WP_Error(
             'mime_mismatch',
-            __('File MIME type verification failed.', 'jrb-remote-site-api-openclaw'),
+            /* translators: %s: placeholder */  __('File MIME type verification failed.', 'openclaw-api'),
             ['status' => 400]
         );
     }
@@ -572,7 +572,7 @@ function openclaw_media_upload($request) {
         return new WP_Error(
             'invalid_file_type',
             sprintf(
-                __('File type "%s" is not allowed. Allowed types: %s', 'jrb-remote-site-api-openclaw'),
+                /* translators: %s: placeholder */  __('File type "%s" is not allowed. Allowed types: %s', 'openclaw-api'),
                 $file_type['type'],
                 implode(', ', $allowed_types)
             ),
@@ -612,7 +612,7 @@ function openclaw_media_upload($request) {
     if ($file_content && preg_match('/<\?php|<\?=|<\s*script/i', $file_content)) {
         return new WP_Error(
             'suspicious_content',
-            __('File contains suspicious code that could be executed on the server.', 'jrb-remote-site-api-openclaw'),
+            /* translators: %s: placeholder */  __('File contains suspicious code that could be executed on the server.', 'openclaw-api'),
             ['status' => 400]
         );
     }
@@ -643,10 +643,10 @@ function openclaw_media_upload($request) {
     $upload_dir = wp_upload_dir();
     $relative_path = str_replace($upload_dir['basedir'] . '/', '', $upload['file']);
     if (strpos($relative_path, '..') !== false || strpos($relative_path, '/') === 0) {
-        @unlink($upload['file']);
+        @wp_delete_file($upload['file']);
         return new WP_Error(
             'upload_security',
-            __('Upload directory traversal attempt detected.', 'jrb-remote-site-api-openclaw'),
+            /* translators: %s: placeholder */  __('Upload directory traversal attempt detected.', 'openclaw-api'),
             ['status' => 403]
         );
     }
@@ -711,7 +711,7 @@ function openclaw_media_get($request) {
     if (!$post || $post->post_type !== 'attachment') {
         return new WP_Error(
             'not_found',
-            __('Media item not found.', 'jrb-remote-site-api-openclaw'),
+            /* translators: %s: placeholder */  __('Media item not found.', 'openclaw-api'),
             ['status' => 404]
         );
     }
@@ -725,14 +725,14 @@ function openclaw_media_get($request) {
  * @param WP_REST_Request $request
  * @return WP_REST_Response|WP_Error
  */
-function openclaw_media_update($request) {
+function openclaw_media_upgmdate($request) {
     $id = $request->get_param('id');
     $post = get_post($id);
     
     if (!$post || $post->post_type !== 'attachment') {
         return new WP_Error(
             'not_found',
-            __('Media item not found.', 'jrb-remote-site-api-openclaw'),
+            /* translators: %s: placeholder */  __('Media item not found.', 'openclaw-api'),
             ['status' => 404]
         );
     }
@@ -792,7 +792,7 @@ function openclaw_media_delete($request) {
     if (!$post || $post->post_type !== 'attachment') {
         return new WP_Error(
             'not_found',
-            __('Media item not found.', 'jrb-remote-site-api-openclaw'),
+            /* translators: %s: placeholder */  __('Media item not found.', 'openclaw-api'),
             ['status' => 404]
         );
     }
@@ -820,7 +820,7 @@ function openclaw_media_delete($request) {
                     'This media is used in %d post. Set force=true to delete anyway.',
                     'This media is used in %d posts. Set force=true to delete anyway.',
                     $usage_count,
-                    'jrb-remote-site-api-openclaw'
+                    'openclaw-api'
                 ),
                 $usage_count
             ),
@@ -834,7 +834,7 @@ function openclaw_media_delete($request) {
     if (!$result) {
         return new WP_Error(
             'delete_failed',
-            __('Failed to delete media item.', 'jrb-remote-site-api-openclaw'),
+            /* translators: %s: placeholder */  __('Failed to delete media item.', 'openclaw-api'),
             ['status' => 500]
         );
     }
