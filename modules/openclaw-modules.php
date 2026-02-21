@@ -1,88 +1,60 @@
 <?php
-/**
- * OpenClaw API - Module Loader
- * 
- * Loads optional modules for third-party plugin integrations.
- * Each module auto-detects if its required plugin is installed.
- */
-
-if (!defined('ABSPATH')) exit;
-
-// Load modules immediately - they'll register their own hooks
-// Auth helper must load first
-require_once __DIR__ . '/openclaw-module-auth.php';
-
-$openclaw_modules = [
-    'openclaw-module-media.php',
-    'openclaw-module-fluentforms.php',
-    'openclaw-module-fluentcommunity.php',
-    'openclaw-module-fluentcrm.php',
-    'openclaw-module-fluentproject.php',
-    'openclaw-module-fluentsupport.php',
-    'openclaw-module-publishpress.php',
-];
-
-foreach ($openclaw_modules as $openclaw_module) {
-    $path = __DIR__ . '/' . $openclaw_module;
-    if (file_exists($path)) {
-        require_once $path;
-    }
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
 /**
- * Admin UI for modules - check status when page renders (after init)
+ * Module Loader for JRB Remote Site API.
  */
-add_action('admin_footer-settings_page_jrb-remote-site-api-openclaw', function() {
-    // Use centralized detection function
-    $openclaw_modules = [
-        'Media' => [
-            'active' => true, // Always active - core WordPress feature
-            'endpoints' => 'Upload, list, update, delete media files',
-        ],
-        'FluentForms' => [
-            'active' => function_exists('openclaw_is_plugin_active') && openclaw_is_plugin_active('fluentforms'),
-            'endpoints' => 'Forms, entries, submissions',
-        ],
-        'FluentCommunity' => [
-            'active' => function_exists('openclaw_is_plugin_active') && openclaw_is_plugin_active('fluentcommunity'),
-            'endpoints' => 'Posts, groups, members',
-        ],
-        'FluentCRM' => [
-            'active' => function_exists('openclaw_is_plugin_active') && openclaw_is_plugin_active('fluentcrm'),
-            'endpoints' => 'Subscribers, lists, campaigns',
-        ],
-        'FluentProject' => [
-            'active' => function_exists('openclaw_is_plugin_active') && openclaw_is_plugin_active('fluentboards'),
-            'endpoints' => 'Projects, tasks, boards',
-        ],
-        'FluentSupport' => [
-            'active' => function_exists('openclaw_is_plugin_active') && openclaw_is_plugin_active('fluentsupport'),
-            'endpoints' => 'Tickets, responses',
-        ],
-        'PublishPress Statuses' => [
-            'active' => function_exists('openclaw_is_plugin_active') && openclaw_is_plugin_active('publishpress-statuses'),
-            'endpoints' => 'Custom post statuses',
-        ],
-    ];
-    ?>
-    <script>
-    jQuery(function($) {
-        var modulesHtml = '<h2 style="margin-top:30px;">Integration Modules</h2>' +
-            '<p style="color:#666;">Modules activate automatically when their required plugin is installed.</p>' +
-            '<table class="widefat" style="max-width:600px;"><thead><tr><th>Module</th><th>Status</th><th>Endpoints</th></tr></thead><tbody>';
-        
-        <?php foreach ($openclaw_modules as $name => $info): ?>
-            var statusHtml = <?php echo $info['active'] ? "'<span style=\"color:green;font-weight:bold;\">✓ Active</span>'" : "'<span style=\"color:#999;\">Not installed</span>'"; ?>;
-            modulesHtml += '<tr>' +
-                '<td><strong><?php echo esc_js($name); ?></strong></td>' +
-                '<td>' + statusHtml + '</td>' +
-                '<td><?php echo esc_js($info['endpoints']); ?></td>' +
-                '</tr>';
-        <?php endforeach; ?>
-        
-        modulesHtml += '</tbody></table>';
-        $('.wrap h1').after(modulesHtml);
-    });
-    </script>
-    <?php
-});
+class JRB_Remote_Module_Loader {
+
+	public static function init() {
+		$modules = array(
+			'media',
+			'fluentcrm',
+			'fluentsupport',
+			'fluentcommunity',
+			'fluentforms',
+		);
+
+		foreach ( $modules as $module ) {
+			$file = plugin_dir_path( __FILE__ ) . 'openclaw-module-' . $module . '.php';
+			if ( file_exists( $file ) ) {
+				require_once $file;
+				$class = 'JRB_Remote_' . self::camel_case( $module ) . '_Module';
+				if ( class_exists( $class ) ) {
+					$class::init();
+				}
+			}
+		}
+	}
+
+	private static function camel_case( $str ) {
+		$parts = explode( '-', $str );
+		if ( count( $parts ) === 1 ) {
+			if ( strpos( $str, 'fluent' ) === 0 ) {
+				$suffix = substr( $str, 6 );
+				return 'Fluent' . strtoupper( $suffix );
+			}
+			return ucfirst( $str );
+		}
+		return implode( '', array_map( 'ucfirst', $parts ) );
+	}
+
+	public static function verify_token( $request ) {
+		$token = $request->get_header( 'X-OpenClaw-Token' );
+		if ( ! $token ) {
+			$token = $request->get_param( 'token' );
+		}
+
+		$stored_token = get_option( 'jrb_remote_api_token' );
+
+		if ( ! $stored_token || ! hash_equals( (string) $stored_token, (string) $token ) ) {
+			return new WP_Error( 'rest_forbidden', 'Invalid API token', array( 'status' => 401 ) );
+		}
+
+		return true;
+	}
+}
+
+JRB_Remote_Module_Loader::init();
