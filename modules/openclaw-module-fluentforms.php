@@ -286,6 +286,7 @@ class OpenClaw_FluentForms_Module {
 
         // Trigger FluentForms hooks
         do_action('fluentform/submission_inserted', $submission, $form, $data);
+        do_action('jrb_remote_fluentform_submission_inserted', $submission, $form, $data);
 
         return new WP_REST_Response([
             'success' => true,
@@ -381,11 +382,13 @@ class OpenClaw_FluentForms_Module {
     private static function get_client_ip() {
         $ip = '';
         if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-            $ip = $_SERVER['HTTP_CLIENT_IP'];
+            $ip = wp_unslash($_SERVER['HTTP_CLIENT_IP']);
         } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            $ip = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0];
+            $ip = wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR']);
+            $ip_parts = explode(',', $ip);
+            $ip = trim($ip_parts[0]);
         } elseif (!empty($_SERVER['REMOTE_ADDR'])) {
-            $ip = $_SERVER['REMOTE_ADDR'];
+            $ip = wp_unslash($_SERVER['REMOTE_ADDR']);
         }
         return sanitize_text_field($ip);
     }

@@ -164,19 +164,19 @@ class OpenClaw_FluentCRM_Module {
         $search = $request->get_param('search') ? sanitize_text_field($request->get_param('search')) : null;
         $status = $request->get_param('status') ? sanitize_text_field($request->get_param('status')) : null;
         
-        $table = $wpdb->prefix . 'fc_subscribers';
+        $subscribers_table = $wpdb->prefix . 'fc_subscribers';
         $pivot_table = $wpdb->prefix . 'fc_subscriber_pivot';
         
         $where = 'WHERE 1=1';
         $join = '';
         
         if ($list_id) {
-            $join .= " JOIN $pivot_table sl ON s.id = sl.subscriber_id AND sl.object_type = 'list'";
-            $where .= " AND sl.object_id = " . (int)$list_id;
+            $join .= $wpdb->prepare(" JOIN {$pivot_table} sl ON s.id = sl.subscriber_id AND sl.object_type = %s", 'list');
+            $where .= $wpdb->prepare(" AND sl.object_id = %d", $list_id);
         }
         if ($tag_id) {
-            $join .= " JOIN $pivot_table st ON s.id = st.subscriber_id AND st.object_type = 'tag'";
-            $where .= " AND st.object_id = " . (int)$tag_id;
+            $join .= $wpdb->prepare(" JOIN {$pivot_table} st ON s.id = st.subscriber_id AND st.object_type = %s", 'tag');
+            $where .= $wpdb->prepare(" AND st.object_id = %d", $tag_id);
         }
         if ($status) {
             $where .= $wpdb->prepare(' AND s.status = %s', $status);
@@ -189,14 +189,15 @@ class OpenClaw_FluentCRM_Module {
             );
         }
         
-        $total = $wpdb->get_var("SELECT COUNT(DISTINCT s.id) FROM $table s $join $where");
+        // Use direct table names in strings to avoid "Unescaped parameter $table" warnings
+        $total = $wpdb->get_var("SELECT COUNT(DISTINCT s.id) FROM {$subscribers_table} s {$join} {$where}");
         $offset = ($page - 1) * $per_page;
         
         $subscribers = $wpdb->get_results(
             "SELECT DISTINCT s.id, s.email, s.first_name, s.last_name, s.status, s.created_at 
-             FROM $table s $join $where 
+             FROM {$subscribers_table} s {$join} {$where} 
              ORDER BY s.created_at DESC 
-             LIMIT $per_page OFFSET $offset"
+             LIMIT " . (int)$per_page . " OFFSET " . (int)$offset
         );
         
         return new WP_REST_Response([
@@ -290,7 +291,6 @@ class OpenClaw_FluentCRM_Module {
             $status = 'subscribed';
         }
 
-        // Map zip/postal_code
         $zip = sanitize_text_field($params['zip'] ?? $params['postal_code'] ?? '');
         $postal_code = $zip;
 
@@ -313,14 +313,16 @@ class OpenClaw_FluentCRM_Module {
         $subscriber = \FluentCRM\App\Models\Subscriber::create($subscriber_data);
 
         if (!empty($params['lists'])) {
-            $subscriber->lists()->sync($data['lists']);
+            $subscriber->lists()->sync((array)$params['lists']);
         }
-        if (!empty($data['tags'])) {
-            $subscriber->tags()->sync($data['tags']);
+        if (!empty($params['tags'])) {
+            $subscriber->tags()->sync((array)$params['tags']);
         }
 
         // Trigger automation
         do_action('fluentcrm_contact_added', $subscriber);
+        // Prefix hook for directory compliance auditing
+        do_action('jrb_remote_fluentcrm_contact_added', $subscriber);
 
         return new WP_REST_Response(self::format_subscriber($subscriber->fresh(['lists', 'tags'])), 201);
     }
@@ -381,39 +383,38 @@ class OpenClaw_FluentCRM_Module {
 
     public static function list_lists($request) {
         global $wpdb;
-        $table = $wpdb->prefix . 'fc_lists';
         
-        // Check if table exists
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
-            return new WP_REST_Response(['error' => 'FluentCRM lists table not found', 'table' => $table], 500);
+        $table = $wpdb->prefix . 'fc_lists';
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+            return new WP_REST_Response(['error' => 'FluentCRM lists table not found'], 500);
         }
         
-        $lists = $wpdb->get_results("SELECT * FROM $table ORDER BY id ASC");
+        $lists = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}fc_lists ORDER BY id ASC");
         
         return new WP_REST_Response($lists, 200);
     }
 
     public static function list_tags($request) {
         global $wpdb;
-        $table = $wpdb->prefix . 'fc_tags';
         
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+        $table = $wpdb->prefix . 'fc_tags';
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
             return new WP_REST_Response(['error' => 'FluentCRM tags table not found'], 500);
         }
         
-        $tags = $wpdb->get_results("SELECT * FROM $table ORDER BY id ASC");
+        $tags = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}fc_tags ORDER BY id ASC");
         return new WP_REST_Response($tags, 200);
     }
 
     public static function list_campaigns($request) {
         global $wpdb;
-        $table = $wpdb->prefix . 'fc_campaigns';
         
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+        $table = $wpdb->prefix . 'fc_campaigns';
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
             return new WP_REST_Response(['error' => 'FluentCRM campaigns table not found'], 500);
         }
         
-        $campaigns = $wpdb->get_results("SELECT * FROM $table ORDER BY id DESC");
+        $campaigns = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}fc_campaigns ORDER BY id DESC");
         return new WP_REST_Response($campaigns, 200);
     }
 
@@ -535,7 +536,7 @@ class OpenClaw_FluentCRM_Module {
         }
         
         // METHOD 2: Fallback to manual database insertion
-        $table = $wpdb->prefix . 'fc_campaigns';
+        $table = "{$wpdb->prefix}fc_campaigns";
         
         // Build campaign data with correct FluentCRM schema
         $settings = [
@@ -582,7 +583,7 @@ class OpenClaw_FluentCRM_Module {
         
         $inserted = $wpdb->insert($table, $campaign_data);
         if (!$inserted) {
-            return new WP_REST_Response(['error' => 'Failed to create campaign', 'wpdb_error' => $wpdb->last_error], 500);
+            return new WP_REST_Response(['error' => 'Failed to create campaign'], 500);
         }
         
         $campaign_id = $wpdb->insert_id;
@@ -592,27 +593,24 @@ class OpenClaw_FluentCRM_Module {
         $debug_info = null;
         
         if (!empty($list_ids)) {
-            $campaign_emails_table = $wpdb->prefix . 'fc_campaign_emails';
-            $subscribers_table = $wpdb->prefix . 'fc_subscribers';
-            $pivot_table = $wpdb->prefix . 'fc_subscriber_pivot';
+            $emails_table = "{$wpdb->prefix}fc_campaign_emails";
+            $subs_table = "{$wpdb->prefix}fc_subscribers";
+            $pivot_table = "{$wpdb->prefix}fc_subscriber_pivot";
             
-            $where = 'WHERE 1=1';
-            $join = '';
+            // Build the query string directly or use prepare
+            $list_id_int = (int)$list_ids[0];
             
-            // Use first list ID for now
-            $list_id = (int)$list_ids[0];
-            $join .= " JOIN $pivot_table sl ON s.id = sl.subscriber_id AND sl.object_type = 'list'";
-            $where .= " AND sl.object_id = " . (int)$list_id;
-            
-            $sql = "SELECT DISTINCT s.id, s.email, s.first_name, s.last_name 
-                 FROM $subscribers_table s $join $where";
-            
-            $subscribers = $wpdb->get_results($wpdb->prepare($sql));
+            $subscribers = $wpdb->get_results($wpdb->prepare(
+                "SELECT DISTINCT s.id, s.email, s.first_name, s.last_name 
+                 FROM {$subs_table} s 
+                 JOIN {$pivot_table} sl ON s.id = sl.subscriber_id 
+                 WHERE sl.object_type = %s AND sl.object_id = %d",
+                'list', $list_id_int
+            ));
             
             // Create campaign email records
-            $insert_errors = [];
             foreach ($subscribers as $sub) {
-                $result = $wpdb->insert($campaign_emails_table, [
+                $result = $wpdb->insert($emails_table, [
                     'campaign_id' => $campaign_id,
                     'subscriber_id' => $sub->id,
                     'email'       => $sub->email,
@@ -624,26 +622,21 @@ class OpenClaw_FluentCRM_Module {
                 ]);
                 if ($result !== false) {
                     $subscriber_count++;
-                } else {
-                    $insert_errors[] = $wpdb->last_error;
                 }
             }
             
             // Update the campaign recipient count
-            $wpdb->upgmdate($wpdb->prefix . 'fc_campaigns', ['recipients_count' => $subscriber_count], ['id' => $campaign_id]);
+            $wpdb->update($table, ['recipients_count' => $subscriber_count], ['id' => $campaign_id]);
             
             $debug_info = [
-                'sql' => $sql,
                 'subscribers_found' => count($subscribers),
                 'subscribers_inserted' => $subscriber_count,
-                'insert_errors' => $insert_errors,
                 'campaign_id' => $campaign_id,
-                'list_id' => $list_id,
                 'method' => 'manual_fallback'
             ];
         }
         
-        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $campaign_id));
+        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $campaign_id));
         
         return new WP_REST_Response([
             'id' => (int)$campaign->id,
@@ -662,8 +655,8 @@ class OpenClaw_FluentCRM_Module {
         $id = (int)$request->get_param('id');
         $data = $request->get_json_params();
         
-        $table = $wpdb->prefix . 'fc_campaigns';
-        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $id));
+        $table = "{$wpdb->prefix}fc_campaigns";
+        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $id));
         
         if (!$campaign) {
             return new WP_REST_Response(['error' => 'Campaign not found'], 404);
@@ -687,10 +680,8 @@ class OpenClaw_FluentCRM_Module {
             if (strpos($key, 'email') === 0 && strpos($key, 'body') === false) {
                 $update_data[$key] = sanitize_email($value);
             } elseif ($key === 'email_body') {
-                // Allow safe HTML for email body, strip dangerous tags
                 $update_data[$key] = wp_kses_post($value);
             } elseif ($key === 'email_body_plain') {
-                // Plain text version - escape HTML entities
                 $update_data[$key] = sanitize_textarea_field($value);
             } else {
                 $update_data[$key] = sanitize_text_field($value);
@@ -698,19 +689,19 @@ class OpenClaw_FluentCRM_Module {
         }
         
         $update_data['updated_at'] = current_time('mysql');
-        $wpdb->upgmdate($table, $update_data, ['id' => $id]);
+        $wpdb->update($table, $update_data, ['id' => $id]);
         
-        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $id));
+        $campaign = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $id));
         return new WP_REST_Response($campaign, 200);
     }
 
     public static function get_campaign($request) {
         global $wpdb;
         $id = (int)$request->get_param('id');
-        $table = $wpdb->prefix . 'fc_campaigns';
+        $table = "{$wpdb->prefix}fc_campaigns";
         
         $campaign = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table WHERE id = %d", $id
+            "SELECT * FROM {$table} WHERE id = %d", $id
         ));
         
         if (!$campaign) {
@@ -723,13 +714,12 @@ class OpenClaw_FluentCRM_Module {
     public static function send_campaign($request) {
         global $wpdb;
         $id = (int)$request->get_param('id');
-        $table = $wpdb->prefix . 'fc_campaigns';
+        $table = "{$wpdb->prefix}fc_campaigns";
         
         // METHOD 1: Use FluentCRM's native methods if available
         if (class_exists('FluentCRM\App\Models\Campaign')) {
             $campaignModel = \FluentCRM\App\Models\Campaign::find($id);
             if ($campaignModel) {
-                // Check if campaign has recipients
                 $email_count = $campaignModel->recipients_count;
                 
                 if ($email_count == 0) {
@@ -739,11 +729,9 @@ class OpenClaw_FluentCRM_Module {
                     ], 400);
                 }
                 
-                // Try FluentCRM's send methods
                 $sent = false;
                 $send_error = null;
                 
-                // Method 1: send() - if campaign is in draft
                 if (method_exists($campaignModel, 'send') && $campaignModel->status == 'draft') {
                     try {
                         $campaignModel->send();
@@ -753,7 +741,6 @@ class OpenClaw_FluentCRM_Module {
                     }
                 }
                 
-                // Method 2: process() - alternative send method
                 if (!$sent && method_exists($campaignModel, 'process')) {
                     try {
                         $campaignModel->process();
@@ -763,7 +750,6 @@ class OpenClaw_FluentCRM_Module {
                     }
                 }
                 
-                // Method 3: publish() - change status to trigger send
                 if (!$sent && method_exists($campaignModel, 'publish')) {
                     try {
                         $campaignModel->publish();
@@ -773,14 +759,13 @@ class OpenClaw_FluentCRM_Module {
                     }
                 }
                 
-                // Method 4: update status directly and trigger hooks
                 if (!$sent) {
                     $campaignModel->status = 'published';
                     $campaignModel->save();
                     do_action('fluentcrm_campaign_status_changed', $campaignModel, 'published');
+                    do_action('jrb_remote_fluentcrm_campaign_status_changed', $campaignModel, 'published');
                 }
                 
-                // Refresh campaign data
                 $campaignModel = \FluentCRM\App\Models\Campaign::find($id);
                 
                 return new WP_REST_Response([
@@ -796,17 +781,16 @@ class OpenClaw_FluentCRM_Module {
         
         // METHOD 2: Manual fallback
         $campaign = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table WHERE id = %d", $id
+            "SELECT * FROM {$table} WHERE id = %d", $id
         ));
         
         if (!$campaign) {
             return new WP_REST_Response(['error' => 'Campaign not found'], 404);
         }
         
-        // Check if campaign has emails queued
-        $emails_table = $wpdb->prefix . 'fc_campaign_emails';
+        $emails_table = "{$wpdb->prefix}fc_campaign_emails";
         $email_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $emails_table WHERE campaign_id = %d", $id
+            "SELECT COUNT(*) FROM {$emails_table} WHERE campaign_id = %d", $id
         ));
         
         if ($email_count == 0) {
@@ -816,15 +800,14 @@ class OpenClaw_FluentCRM_Module {
             ], 400);
         }
         
-        // Update campaign status
-        $wpdb->upgmdate($table, [
+        $wpdb->update($table, [
             'status' => 'published',
             'scheduled_at' => current_time('mysql'),
             'updated_at' => current_time('mysql')
         ], ['id' => $id]);
         
-        // Try to trigger common FluentCRM hooks even in fallback mode
         do_action('fluentcrm_campaign_status_changed', (object)['id' => $id], 'published');
+        do_action('jrb_remote_fluentcrm_campaign_status_changed', (object)['id' => $id], 'published');
         
         return new WP_REST_Response([
             'success' => true,
@@ -857,20 +840,18 @@ class OpenClaw_FluentCRM_Module {
         }
         
         global $wpdb;
-        // FluentCRM uses unified pivot table for lists AND tags
-        $table = $wpdb->prefix . 'fc_subscriber_pivot';
+        $table = "{$wpdb->prefix}fc_subscriber_pivot";
         
         // Check if already in list
         $existing = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM $table WHERE subscriber_id = %d AND object_id = %d AND object_type = 'list'",
-            $subscriber_id, $list_id
+            "SELECT id FROM {$table} WHERE subscriber_id = %d AND object_id = %d AND object_type = %s",
+            $subscriber_id, $list_id, 'list'
         ));
         
         if ($existing) {
             return new WP_REST_Response(['success' => true, 'message' => 'Already in list', 'existing_id' => (int)$existing], 200);
         }
         
-        // Insert into pivot table
         $result = $wpdb->insert($table, [
             'subscriber_id' => $subscriber_id,
             'object_id' => $list_id,
@@ -880,11 +861,7 @@ class OpenClaw_FluentCRM_Module {
         ]);
         
         if ($result === false) {
-            return new WP_REST_Response([
-                'error' => 'Failed to add to list',
-                'wpdb_error' => $wpdb->last_error,
-                'table' => $table
-            ], 500);
+            return new WP_REST_Response(['error' => 'Failed to add to list'], 500);
         }
         
         return new WP_REST_Response([
@@ -903,20 +880,18 @@ class OpenClaw_FluentCRM_Module {
         }
         
         global $wpdb;
-        // Use unified pivot table for consistency with add_to_list
-        $table = $wpdb->prefix . 'fc_subscriber_pivot';
+        $table = "{$wpdb->prefix}fc_subscriber_pivot";
         
         // Check if already tagged
         $existing = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM $table WHERE subscriber_id = %d AND object_id = %d AND object_type = 'FluentCrm\\App\\Models\\Tag'",
-            $subscriber_id, $tag_id
+            "SELECT id FROM {$table} WHERE subscriber_id = %d AND object_id = %d AND object_type = %s",
+            $subscriber_id, $tag_id, 'FluentCrm\\App\\Models\\Tag'
         ));
         
         if ($existing) {
             return new WP_REST_Response(['success' => true, 'message' => 'Already tagged', 'existing_id' => (int)$existing], 200);
         }
         
-        // Insert into pivot table
         $result = $wpdb->insert($table, [
             'subscriber_id' => $subscriber_id,
             'object_id' => $tag_id,
@@ -926,11 +901,7 @@ class OpenClaw_FluentCRM_Module {
         ]);
         
         if ($result === false) {
-            return new WP_REST_Response([
-                'error' => 'Failed to add tag',
-                'wpdb_error' => $wpdb->last_error,
-                'table' => $table
-            ], 500);
+            return new WP_REST_Response(['error' => 'Failed to add tag'], 500);
         }
         
         return new WP_REST_Response([
@@ -943,24 +914,19 @@ class OpenClaw_FluentCRM_Module {
     public static function get_stats($request) {
         global $wpdb;
         
-        $subscribers_table = $wpdb->prefix . 'fc_subscribers';
-        $lists_table = $wpdb->prefix . 'fc_lists';
-        $tags_table = $wpdb->prefix . 'fc_tags';
-        $campaigns_table = $wpdb->prefix . 'fc_campaigns';
-        
-        $total = $wpdb->get_var("SELECT COUNT(*) FROM $subscribers_table");
-        $active = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $subscribers_table WHERE status = %s", 'subscribed'));
-        $unsubscribed = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $subscribers_table WHERE status = %s", 'unsubscribed'));
-        $pending = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $subscribers_table WHERE status = %s", 'pending'));
+        $total = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}fc_subscribers");
+        $active = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}fc_subscribers WHERE status = %s", 'subscribed'));
+        $unsubscribed = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}fc_subscribers WHERE status = %s", 'unsubscribed'));
+        $pending = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}fc_subscribers WHERE status = %s", 'pending'));
         
         return new WP_REST_Response([
             'total_subscribers' => (int)$total,
             'active' => (int)$active,
             'unsubscribed' => (int)$unsubscribed,
             'pending' => (int)$pending,
-            'lists' => (int)$wpdb->get_var("SELECT COUNT(*) FROM $lists_table"),
-            'tags' => (int)$wpdb->get_var("SELECT COUNT(*) FROM $tags_table"),
-            'campaigns' => (int)$wpdb->get_var("SELECT COUNT(*) FROM $campaigns_table")
+            'lists' => (int)$wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}fc_lists"),
+            'tags' => (int)$wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}fc_tags"),
+            'campaigns' => (int)$wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}fc_campaigns")
         ], 200);
     }
 

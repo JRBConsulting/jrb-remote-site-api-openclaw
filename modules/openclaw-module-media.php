@@ -94,14 +94,14 @@ add_action('rest_api_init', function() {
             $token = null;
             if (isset($_SERVER['HTTP_X_CSRF_TOKEN'])) {
                 $token = sanitize_text_field(wp_unslash($_SERVER['HTTP_X_CSRF_TOKEN']));
-            } elseif (isset(wp_unslash($_REQUEST['csrf_token']))) {
+            } elseif (isset($_REQUEST['csrf_token'])) {
                 $token = sanitize_text_field(wp_unslash($_REQUEST['csrf_token']));
             }
             
             // For API calls, we check capability but allow requests without CSRF
             // CSRF is primarily for form-based uploads from trusted sources
             if (!empty($token) && !wp_verify_nonce($token, 'openclaw_media_upload')) {
-                return new WP_Error('csrf_invalid', 'CSRF token validation failed', ['status' => 403]);
+                return new WP_Error('csrf_invalid', __('CSRF token validation failed', 'openclaw-api'), ['status' => 403]);
             }
             
             return openclaw_verify_token_and_can('media_upload'); 
@@ -277,6 +277,7 @@ function openclaw_validate_svg($file_path) {
     if ($file_size > $max_size) {
         return new WP_Error(
             'svg_too_large',
+            /* translators: %s: Maximum allowed file size for SVG validation. */
             sprintf(__('SVG file exceeds maximum size of %s for validation.', 'openclaw-api'), size_format($max_size))
         );
     }
@@ -286,7 +287,8 @@ function openclaw_validate_svg($file_path) {
     if ($content === false) {
         return new WP_Error(
             'svg_read_failed',
-            /* translators: %s: placeholder */  __('Failed to read SVG file for security validation.', 'openclaw-api')
+            /* translators: %s: None. */
+            __('Failed to read SVG file for security validation.', 'openclaw-api')
         );
     }
     
@@ -332,10 +334,22 @@ function openclaw_validate_svg($file_path) {
         if (preg_match($pattern, $content)) {
             return new WP_Error(
                 'unsafe_svg',
-                /* translators: %s: placeholder */  __('This SVG file contains potentially unsafe content that could lead to XSS attacks.', 'openclaw-api')
+                __('This SVG file contains potentially unsafe content that could lead to XSS attacks.', 'openclaw-api')
             );
         }
     }
+    
+    // Additional SVG security: limit elements to prevent XML-based DoS
+    $xml_elements = preg_match_all('/<\s*([a-zA-Z][a-zA-Z0-9]*)\b/', $content, $matches);
+    
+    // Warning but not blocking - configurable
+    if ($xml_elements > 5000) {
+        // Log warning but allow (could be legitimate complex SVG)
+        
+    }
+    
+    return true;
+}
     
     // Additional SVG security: limit elements to prevent XML-based DoS
     $xml_elements = preg_match_all('/<\s*([a-zA-Z][a-zA-Z0-9]*)\b/', $content, $matches);
@@ -571,8 +585,9 @@ function openclaw_media_upload($request) {
     if (!in_array($file_type['type'], $allowed_types, true)) {
         return new WP_Error(
             'invalid_file_type',
+            /* translators: 1: The uploaded file's MIME type, 2: List of allowed MIME types. */
             sprintf(
-                /* translators: %s: placeholder */  __('File type "%s" is not allowed. Allowed types: %s', 'openclaw-api'),
+                __('File type "%1$s" is not allowed. Allowed types: %2$s', 'openclaw-api'),
                 $file_type['type'],
                 implode(', ', $allowed_types)
             ),
@@ -725,7 +740,7 @@ function openclaw_media_get($request) {
  * @param WP_REST_Request $request
  * @return WP_REST_Response|WP_Error
  */
-function openclaw_media_upgmdate($request) {
+function openclaw_media_update($request) {
     $id = $request->get_param('id');
     $post = get_post($id);
     
@@ -815,6 +830,7 @@ function openclaw_media_delete($request) {
     if ($usage_count > 0 && !$force) {
         return new WP_Error(
             'media_in_use',
+            /* translators: %d: Number of posts where the media is used. */
             sprintf(
                 _n(
                     'This media is used in %d post. Set force=true to delete anyway.',

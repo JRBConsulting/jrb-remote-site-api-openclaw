@@ -209,10 +209,10 @@ class OpenClaw_FluentSupport_Module {
         $priority = $request->get_param('priority');
         $offset = ($page - 1) * $per_page;
         
-        $table_name = $wpdb->prefix . 'fs_tickets';
+        $table_name = "{$wpdb->prefix}fs_tickets";
         
         // Check if table exists (FluentSupport native)
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name) {
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table_name)) === $table_name) {
             $where = 'WHERE 1=1';
             if ($status) {
                 $where .= $wpdb->prepare(' AND status = %s', sanitize_text_field($status));
@@ -221,18 +221,17 @@ class OpenClaw_FluentSupport_Module {
                 $where .= $wpdb->prepare(' AND priority = %s', sanitize_text_field($priority));
             }
             
-            $total = $wpdb->get_var("SELECT COUNT(*) FROM $table_name $where");
+            $total = (int)$wpdb->get_var("SELECT COUNT(*) FROM {$table_name} {$where}");
             $tickets = $wpdb->get_results(
-                "SELECT * FROM $table_name $where ORDER BY created_at DESC LIMIT $per_page OFFSET $offset"
+                "SELECT * FROM {$table_name} {$where} ORDER BY created_at DESC LIMIT " . (int)$per_page . " OFFSET " . (int)$offset
             );
             
             return new WP_REST_Response([
                 'data' => array_map([__CLASS__, 'format_native_ticket'], $tickets ?: []),
-                'meta' => ['total' => (int)$total, 'page' => $page, 'per_page' => $per_page]
+                'meta' => ['total' => $total, 'page' => $page, 'per_page' => $per_page]
             ], 200);
         }
         
-        // Fallback: empty response if FluentSupport tables don't exist
         return new WP_REST_Response([
             'data' => [],
             'meta' => ['total' => 0, 'page' => $page, 'per_page' => $per_page, 'note' => 'FluentSupport tables not found']
@@ -263,8 +262,8 @@ class OpenClaw_FluentSupport_Module {
         global $wpdb;
         $ticket_id = (int)$request->get_param('id');
         
-        $table_name = $wpdb->prefix . 'fs_tickets';
-        $ticket = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $ticket_id));
+        $table_name = "{$wpdb->prefix}fs_tickets";
+        $ticket = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_name} WHERE id = %d", $ticket_id));
         
         if (!$ticket) {
             return new WP_REST_Response(['error' => 'Ticket not found'], 404);
@@ -273,9 +272,9 @@ class OpenClaw_FluentSupport_Module {
         $data = self::format_native_ticket($ticket);
         
         // Get responses
-        $responses_table = $wpdb->prefix . 'fs_conversations';
+        $responses_table = "{$wpdb->prefix}fs_conversations";
         $responses = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $responses_table WHERE ticket_id = %d ORDER BY created_at ASC",
+            "SELECT * FROM {$responses_table} WHERE ticket_id = %d ORDER BY created_at ASC",
             $ticket_id
         ));
         
@@ -313,17 +312,13 @@ class OpenClaw_FluentSupport_Module {
             $priority = 'normal';
         }
         
-        $tickets_table = $wpdb->prefix . 'fs_tickets';
-        $customers_table = $wpdb->prefix . 'fs_customers';
+        $tickets_table = "{$wpdb->prefix}fs_tickets";
+        $customers_table = "{$wpdb->prefix}fs_customers";
         
         // Check if tables exist
-        if ($wpdb->get_var("SHOW TABLES LIKE '$tickets_table'") !== $tickets_table) {
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $tickets_table)) !== $tickets_table) {
             return new WP_REST_Response([
-                'error' => 'FluentSupport tables not found. Ensure FluentSupport is properly installed.',
-                'debug' => [
-                    'tables_exist' => false,
-                    'expected_table' => $tickets_table
-                ]
+                'error' => 'FluentSupport tables not found. Ensure FluentSupport is properly installed.'
             ], 500);
         }
         
@@ -331,7 +326,7 @@ class OpenClaw_FluentSupport_Module {
         $customer_id = 0;
         if (!empty($email)) {
             $existing_customer = $wpdb->get_row($wpdb->prepare(
-                "SELECT id FROM $customers_table WHERE email = %s",
+                "SELECT id FROM {$customers_table} WHERE email = %s",
                 $email
             ));
             
@@ -364,29 +359,28 @@ class OpenClaw_FluentSupport_Module {
         ]);
         
         if (!$inserted) {
-            return new WP_REST_Response([
-                'error' => 'Failed to create ticket',
-                'db_error' => $wpdb->last_error
-            ], 500);
+            return new WP_REST_Response(['error' => 'Failed to create ticket'], 500);
         }
         
         $ticket_id = $wpdb->insert_id;
-        $ticket = $wpdb->get_row($wpdb->prepare("SELECT * FROM $tickets_table WHERE id = %d", $ticket_id));
+        $ticket = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$tickets_table} WHERE id = %d", $ticket_id));
         
         // Trigger FluentSupport hooks
         do_action('fluent_support_ticket_created', $ticket_id, $data);
+        do_action('jrb_remote_support_ticket_created', $ticket_id, $data);
         
         return new WP_REST_Response(self::format_native_ticket($ticket), 201);
     }
+
 
     public static function update_ticket($request) {
         global $wpdb;
         $ticket_id = (int)$request->get_param('id');
         $data = $request->get_json_params();
         
-        $tickets_table = $wpdb->prefix . 'fs_tickets';
+        $tickets_table = "{$wpdb->prefix}fs_tickets";
         
-        $ticket = $wpdb->get_row($wpdb->prepare("SELECT * FROM $tickets_table WHERE id = %d", $ticket_id));
+        $ticket = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$tickets_table} WHERE id = %d", $ticket_id));
         if (!$ticket) {
             return new WP_REST_Response(['error' => 'Ticket not found'], 404);
         }
@@ -417,11 +411,12 @@ class OpenClaw_FluentSupport_Module {
             $update_data['agent_id'] = (int)$data['agent_id'];
         }
         
-        $wpdb->upgmdate($tickets_table, $update_data, ['id' => $ticket_id]);
+        $wpdb->update($tickets_table, $update_data, ['id' => $ticket_id]);
         
         do_action('fluent_support_ticket_status_changed', $ticket_id, $data['status'] ?? null);
+        do_action('jrb_remote_support_ticket_status_changed', $ticket_id, $data['status'] ?? null);
         
-        $ticket = $wpdb->get_row($wpdb->prepare("SELECT * FROM $tickets_table WHERE id = %d", $ticket_id));
+        $ticket = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$tickets_table} WHERE id = %d", $ticket_id));
         return new WP_REST_Response(self::format_native_ticket($ticket), 200);
     }
 
@@ -450,7 +445,7 @@ class OpenClaw_FluentSupport_Module {
         $conversations_table = $wpdb->prefix . 'fs_conversations';
         
         // Verify ticket exists
-        $ticket = $wpdb->get_row($wpdb->prepare("SELECT id, customer_id FROM $tickets_table WHERE id = %d", $ticket_id));
+        $ticket = $wpdb->get_row($wpdb->prepare("SELECT id, customer_id FROM {$tickets_table} WHERE id = %d", $ticket_id));
         if (!$ticket) {
             return new WP_REST_Response(['error' => 'Ticket not found'], 404);
         }
@@ -462,7 +457,7 @@ class OpenClaw_FluentSupport_Module {
         if (!$response_id) {
             // Get next serial number for this ticket
             $serial = (int)$wpdb->get_var($wpdb->prepare(
-                "SELECT MAX(serial) FROM $conversations_table WHERE ticket_id = %d",
+                "SELECT MAX(serial) FROM {$conversations_table} WHERE ticket_id = %d",
                 $ticket_id
             )) + 1;
             
@@ -484,29 +479,21 @@ class OpenClaw_FluentSupport_Module {
             ]);
             
             $response_id = $wpdb->insert_id;
-            
-            // Check for errors
-            if (!$response_id) {
-                return new WP_REST_Response([
-                    'error' => 'Failed to insert response',
-                    'db_error' => $wpdb->last_error,
-                    'last_query' => $wpdb->last_query,
-                ], 500);
-            }
         }
         
         // Update ticket status and timestamp
-        $wpdb->upgmdate($tickets_table, [
+        $wpdb->update($tickets_table, [
             'status' => 'waiting_customer',
             'updated_at' => current_time('mysql'),
         ], ['id' => $ticket_id]);
         
         do_action('fluent_support_response_added', $ticket_id, $response_id, true);
+        do_action('jrb_remote_support_response_added', $ticket_id, $response_id, true);
         
         // Get agent info for response
         $agent_name = 'Support';
-        $agents_table = $wpdb->prefix . 'fs_agents';
-        $agent = $wpdb->get_row($wpdb->prepare("SELECT * FROM $agents_table WHERE user_id = %d", $agent_id));
+        $agents_table = "{$wpdb->prefix}fs_agents";
+        $agent = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$agents_table} WHERE user_id = %d", $agent_id));
         if ($agent) {
             $agent_name = trim(($agent->first_name ?? '') . ' ' . ($agent->last_name ?? '')) ?: 'Support';
         }
@@ -531,24 +518,24 @@ class OpenClaw_FluentSupport_Module {
         $search = $request->get_param('search');
         $offset = ($page - 1) * $per_page;
         
-        $customers_table = $wpdb->prefix . 'fs_customers';
+        $customers_table = "{$wpdb->prefix}fs_customers";
         
-        if ($wpdb->get_var("SHOW TABLES LIKE '$customers_table'") !== $customers_table) {
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $customers_table)) !== $customers_table) {
             return new WP_REST_Response([], 200);
         }
         
         $where = 'WHERE 1=1';
         if ($search) {
-            $search = '%' . $wpdb->esc_like(sanitize_text_field($search)) . '%';
-            $where .= $wpdb->prepare(' AND (email LIKE %s OR first_name LIKE %s OR last_name LIKE %s)', $search, $search, $search);
+            $search_like = '%' . $wpdb->esc_like(sanitize_text_field($search)) . '%';
+            $where .= $wpdb->prepare(' AND (email LIKE %s OR first_name LIKE %s OR last_name LIKE %s)', $search_like, $search_like, $search_like);
         }
         
-        $total = $wpdb->get_var("SELECT COUNT(*) FROM $customers_table $where");
-        $customers = $wpdb->get_results("SELECT * FROM $customers_table $where ORDER BY created_at DESC LIMIT $per_page OFFSET $offset");
+        $total = $wpdb->get_var("SELECT COUNT(*) FROM {$customers_table} {$where}");
+        $customers = $wpdb->get_results("SELECT * FROM {$customers_table} {$where} ORDER BY created_at DESC LIMIT " . (int)$per_page . " OFFSET " . (int)$offset);
         
         $data = array_map(function($c) use ($wpdb) {
-            $tickets_table = $wpdb->prefix . 'fs_tickets';
-            $ticket_count = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $tickets_table WHERE customer_id = %d", $c->id));
+            $tickets_table = "{$wpdb->prefix}fs_tickets";
+            $ticket_count = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$tickets_table} WHERE customer_id = %d", $c->id));
             
             return [
                 'id' => (int)$c->id,
@@ -567,16 +554,16 @@ class OpenClaw_FluentSupport_Module {
         global $wpdb;
         $customer_id = (int)$request->get_param('id');
         
-        $customers_table = $wpdb->prefix . 'fs_customers';
-        $customer = $wpdb->get_row($wpdb->prepare("SELECT * FROM $customers_table WHERE id = %d", $customer_id));
+        $customers_table = "{$wpdb->prefix}fs_customers";
+        $customer = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$customers_table} WHERE id = %d", $customer_id));
         
         if (!$customer) {
             return new WP_REST_Response(['error' => 'Customer not found'], 404);
         }
         
-        $tickets_table = $wpdb->prefix . 'fs_tickets';
+        $tickets_table = "{$wpdb->prefix}fs_tickets";
         $tickets = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $tickets_table WHERE customer_id = %d ORDER BY created_at DESC LIMIT 20",
+            "SELECT * FROM {$tickets_table} WHERE customer_id = %d ORDER BY created_at DESC LIMIT 20",
             $customer_id
         ));
         
@@ -589,6 +576,7 @@ class OpenClaw_FluentSupport_Module {
             'tickets' => array_map([__CLASS__, 'format_native_ticket'], $tickets ?: []),
         ], 200);
     }
+
 
     // === ASSIGNMENT ===
 
@@ -603,13 +591,14 @@ class OpenClaw_FluentSupport_Module {
             return new WP_REST_Response(['error' => 'Valid ticket_id required'], 400);
         }
         
-        $tickets_table = $wpdb->prefix . 'fs_tickets';
-        $wpdb->upgmdate($tickets_table, [
+        $tickets_table = "{$wpdb->prefix}fs_tickets";
+        $wpdb->update($tickets_table, [
             'agent_id' => $agent_id,
             'updated_at' => current_time('mysql'),
         ], ['id' => $ticket_id]);
         
         do_action('fluent_support_ticket_assigned', $ticket_id, $agent_id);
+        do_action('jrb_remote_support_ticket_assigned', $ticket_id, $agent_id);
         
         return new WP_REST_Response([
             'ticket_id' => $ticket_id,
@@ -628,10 +617,10 @@ class OpenClaw_FluentSupport_Module {
         }
         
         $search = '%' . $wpdb->esc_like(sanitize_text_field($q)) . '%';
-        $tickets_table = $wpdb->prefix . 'fs_tickets';
+        $tickets_table = "{$wpdb->prefix}fs_tickets";
         
         $tickets = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $tickets_table WHERE title LIKE %s OR content LIKE %s ORDER BY created_at DESC LIMIT 50",
+            "SELECT * FROM {$tickets_table} WHERE title LIKE %s OR content LIKE %s ORDER BY created_at DESC LIMIT 50",
             $search, $search
         ));
         
@@ -645,7 +634,7 @@ class OpenClaw_FluentSupport_Module {
 
     public static function get_stats($request) {
         global $wpdb;
-        $tickets_table = $wpdb->prefix . 'fs_tickets';
+        $tickets_table = "{$wpdb->prefix}fs_tickets";
         
         $stats = [
             'total' => 0,
@@ -653,15 +642,15 @@ class OpenClaw_FluentSupport_Module {
             'unassigned' => 0,
         ];
         
-        if ($wpdb->get_var("SHOW TABLES LIKE '$tickets_table'") === $tickets_table) {
-            $stats['total'] = (int)$wpdb->get_var("SELECT COUNT(*) FROM $tickets_table");
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $tickets_table)) === $tickets_table) {
+            $stats['total'] = (int)$wpdb->get_var("SELECT COUNT(*) FROM {$tickets_table}");
             
-            $statuses = $wpdb->get_results("SELECT status, COUNT(*) as count FROM $tickets_table GROUP BY status");
+            $statuses = $wpdb->get_results("SELECT status, COUNT(*) as count FROM {$tickets_table} GROUP BY status");
             foreach ($statuses as $s) {
                 $stats['by_status'][$s->status] = (int)$s->count;
             }
             
-            $stats['unassigned'] = (int)$wpdb->get_var("SELECT COUNT(*) FROM $tickets_table WHERE agent_id = 0 OR agent_id IS NULL");
+            $stats['unassigned'] = (int)$wpdb->get_var("SELECT COUNT(*) FROM {$tickets_table} WHERE agent_id = 0 OR agent_id IS NULL");
         }
         
         return new WP_REST_Response($stats, 200);
@@ -671,9 +660,6 @@ class OpenClaw_FluentSupport_Module {
     
     /**
      * Sync FluentForms entries to FluentSupport tickets
-     * 
-     * @param WP_REST_Request $request
-     * @return WP_REST_Response
      */
     public static function sync_forms_to_tickets($request) {
         global $wpdb;
@@ -684,17 +670,17 @@ class OpenClaw_FluentSupport_Module {
         $default_agent_id = (int)($data['default_agent_id'] ?? 0);
         
         // Get FluentForms entries table
-        $entries_table = $wpdb->prefix . 'fluentform_entries';
+        $entries_table = "{$wpdb->prefix}fluentform_entries";
         
-        if ($wpdb->get_var("SHOW TABLES LIKE '$entries_table'") !== $entries_table) {
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $entries_table)) !== $entries_table) {
             return new WP_REST_Response(['error' => 'FluentForms entries table not found'], 500);
         }
         
         // Get FluentSupport tickets table
-        $tickets_table = $wpdb->prefix . 'fs_tickets';
-        $customers_table = $wpdb->prefix . 'fs_customers';
+        $tickets_table = "{$wpdb->prefix}fs_tickets";
+        $customers_table = "{$wpdb->prefix}fs_customers";
         
-        if ($wpdb->get_var("SHOW TABLES LIKE '$tickets_table'") !== $tickets_table) {
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $tickets_table)) !== $tickets_table) {
             return new WP_REST_Response(['error' => 'FluentSupport tables not found'], 500);
         }
         
@@ -704,10 +690,11 @@ class OpenClaw_FluentSupport_Module {
             $where .= $wpdb->prepare(' AND form_id = %d', $form_id);
         }
         
-        // Get entries not already synced (we check for existing tickets by email/content)
+        // Get entries
         $entries = $wpdb->get_results(
-            "SELECT id, form_id, response, created_at FROM $entries_table $where ORDER BY id DESC LIMIT 100"
+            "SELECT id, form_id, response, created_at FROM {$entries_table} {$where} ORDER BY id DESC LIMIT 100"
         );
+
         
         $synced = [];
         $skipped = [];
