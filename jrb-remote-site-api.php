@@ -2,7 +2,7 @@
 /**
  * Plugin Name: JRB Remote Site API
  * Description: WordPress REST API for JRB Remote remote site management
- * Version: 5.1.5
+ * Version: 5.1.6
  * Author: OpenClaw
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
