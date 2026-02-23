@@ -113,7 +113,7 @@ class JRB_Remote_Media_Module {
 
 		if ( $usage_count > 0 && ! (bool) $request->get_param( 'force' ) ) {
 			/* translators: %d: usage count */
-			$message = sprintf( _n( 'File has %d usage.', 'File has %d usages.', (int) $usage_count, 'openclaw-api' ), (int) $usage_count );
+			$message = sprintf( _n( 'File has %d usage.', 'File has %d usages.', (int) $usage_count, 'jrb-remote-site-api' ), (int) $usage_count );
 			return new WP_REST_Response( array( 'error' => $message, 'usage' => (int) $usage_count ), 400 );
 		}
 

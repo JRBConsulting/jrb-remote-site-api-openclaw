@@ -1,15 +1,15 @@
 <?php
 /**
- * Plugin Name:       JRB Remote Site API for OpenClaw
+ * Plugin Name:       JRB Remote Site API
  * Description:       WordPress REST API for OpenClaw remote site management
- * Version:           5.1.0
+ * Version:           5.1.1
  * Author:            JRB Consulting
  * License:           GPLv2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Tested up to:      6.9
  * Requires at least: 5.8
  * Requires PHP:      7.4
- * Text Domain:       openclaw-api
+ * Text Domain:       jrb-remote-site-api
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 // Global prefix for the plugin version.
 if ( ! defined( 'JRB_REMOTE_SITE_API_VERSION' ) ) {
-	define( 'JRB_REMOTE_SITE_API_VERSION', '5.1.0' );
+	define( 'JRB_REMOTE_SITE_API_VERSION', '5.1.1' );
 }
 
 /**
