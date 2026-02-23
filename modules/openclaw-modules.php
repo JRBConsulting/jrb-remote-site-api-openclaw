@@ -57,4 +57,4 @@ class JRB_Remote_Module_Loader {
 	}
 }
 
-JRB_Remote_Module_Loader::init();
+
