@@ -1,0 +1,15 @@
+# .gitignore for JRB Remote Site API
+# Standard ignores
+node_modules/
+.DS_Store
+*.zip
+*.log
+
+# Deployment & Internal Tools
+.dev-tools/
+/tmp/
+
+# SVN Assets (DotOrg Specific)
+# These are kept in /assets for SVN but shouldn't clutter the GitHub production releases
+/assets/
+ trunk/assets/
