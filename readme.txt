@@ -1,9 +1,9 @@
 === JRB Remote Site API for OpenClaw ===
 Contributors: jrbconsulting
-Tags: api, remote, openclaw
+Tags: api, remote, openclaw, automation, fluentcrm
 Requires at least: 5.6
 Tested up to: 6.9
-Stable tag: 2.7.6
+Stable tag: 6.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -11,7 +11,7 @@ Extend WordPress REST API to support remote site management, plugin updates, and
 
 == Description ==
 
-Extend WordPress REST API to support remote site management, plugin updates, and integration with FluentCRM, FluentSupport, and other popular plugins.
+JRB Remote Site API for OpenClaw provides a secure bridge between your WordPress environment and the OpenClaw agent ecosystem. It extends the WordPress REST API to support remote site management, plugin updates, and integration with FluentCRM, FluentSupport, and other popular plugins.
 
 == Installation ==
 
@@ -21,16 +21,10 @@ Extend WordPress REST API to support remote site management, plugin updates, and
 
 == Changelog ==
 
-= 2.7.3 =
-* Final compliance push for WordPress.org directory.
-* Removed Update URI header (not allowed for dot org hosted plugins).
-* Restored Text Domain to 'openclaw-api' to match submission slug.
-* Updated 'Tested up to' to 6.7.
+= 6.3.2 =
+* First official release on the WordPress Plugin Directory.
+* Synchronized versioning across GitHub and SVN.
+* Enhanced FluentCRM integration and Square POS bridge support.
 
-= 2.7.2 =
-* Fix license declaration order in readme.txt for WordPress.org compliance.
-
-= 2.7.1 =
-* Compliance rebranding: Renamed to JRB Remote Site API for OpenClaw.
-* Added SKILL.md for agentic reference.
-* Updated text domain and slug normalization.
+= 2.7.6 =
+* Update GitHub updater logic.
