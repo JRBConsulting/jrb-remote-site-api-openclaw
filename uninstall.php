@@ -1,6 +1,6 @@
 <?php
 /**
- * OpenClaw API Uninstall
+ * jrb_remote API Uninstall
  *
  * Clean up plugin options on uninstall.
  */
@@ -10,10 +10,10 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
 }
 
 // Delete plugin options
-delete_option('openclaw_api_token');
-delete_option('openclaw_api_token_hash');
-delete_option('openclaw_api_capabilities');
-delete_transient('openclaw_new_token');
+delete_option('jrb_remote_api_token');
+delete_option('jrb_remote_api_token_hash');
+delete_option('jrb_remote_api_capabilities');
+delete_transient('jrb_remote_new_token');
 
 // Also clean up any old options from previous versions
 delete_option('lilith_api_token');
