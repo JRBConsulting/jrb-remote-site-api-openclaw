@@ -3,17 +3,14 @@ namespace JRB\RemoteApi\Core;
 
 if (!defined('ABSPATH')) exit;
 
-/**
- * Main Plugin Orchestrator
- */
 class Plugin {
     const VERSION = '6.4.0';
+    const API_NAMESPACE = 'openclaw/v1'; // Preserving existing namespace for compatibility
     const TEXT_DOMAIN = 'jrb-remote-site-api-for-openclaw';
-    const API_NAMESPACE = 'jrb-remote/v1';
+    const GITHUB_REPO = 'JRBConsulting/jrb-remote-site-api-openclaw';
 
     public static function init() {
-        // Load dependencies
-        self::define_constants();
+        self::load_updater();
         
         // Initialize Core Components
         if (class_exists('\JRB\RemoteApi\Auth\Guard')) {
@@ -25,44 +22,60 @@ class Plugin {
             \JRB\RemoteApi\Handlers\AdminHandler::init();
         }
         
-        // Initialize Modules
+        // Initialize REST Routes
         add_action('rest_api_init', [self::class, 'register_routes']);
     }
 
-    private static function define_constants() {
-        if (!defined('JRB_REMOTE_API_VERSION')) {
-            define('JRB_REMOTE_API_VERSION', self::VERSION);
-        }
+    private static function load_updater() {
+        // Restore the GitHub Updater Logic
+        add_filter('update_plugins_github.com', function($update, $plugin_data, $plugin_file) {
+            $slug = 'jrb-remote-site-api-for-openclaw/jrb-remote-site-api-for-openclaw.php';
+            if ($plugin_file !== $slug) return $update;
+            
+            $response = wp_remote_get("https://api.github.com/repos/" . self::GITHUB_REPO . "/releases/latest", [
+                'headers' => ['User-Agent' => 'WordPress JRB Remote API Plugin'],
+                'timeout' => 10,
+            ]);
+            
+            if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) return $update;
+            
+            $release = json_decode(wp_remote_retrieve_body($response), true);
+            if (empty($release['tag_name']) || empty($release['assets'])) return $update;
+            
+            $new_version = ltrim($release['tag_name'], 'v');
+            if (version_compare($new_version, self::VERSION, '<=')) return $update;
+            
+            $download_url = null;
+            foreach ($release['assets'] as $asset) {
+                if (strpos($asset['name'], '.zip') !== false) {
+                    $download_url = $asset['browser_download_url'];
+                    break;
+                }
+            }
+            if (!$download_url) return $update;
+            
+            return [
+                'slug' => 'jrb-remote-site-api-for-openclaw',
+                'version' => $new_version,
+                'url' => $release['html_url'],
+                'package' => $download_url,
+            ];
+        }, 10, 3);
     }
 
     public static function register_routes() {
-        // Core routes
+        // Register Ping (no auth)
+        register_rest_route(self::API_NAMESPACE, '/ping', [
+            'methods' => 'GET',
+            'callback' => function() { return ['status' => 'ok', 'time' => current_time('mysql')]; },
+            'permission_callback' => '__return_true',
+        ]);
+
+        // Delegate to Handlers
         \JRB\RemoteApi\Handlers\SystemHandler::register_routes();
-        
-        // Media routes
         \JRB\RemoteApi\Handlers\MediaHandler::register_routes();
-        
-        // Module routes (conditional)
-        if (self::is_fluentcrm_active()) {
-            \JRB\RemoteApi\Handlers\FluentCrmHandler::register_routes();
-        }
-        if (self::is_fluentsupport_active()) {
-            \JRB\RemoteApi\Handlers\FluentSupportHandler::register_routes();
-        }
-        if (self::is_fluentproject_active()) {
-            \JRB\RemoteApi\Handlers\FluentProjectHandler::register_routes();
-        }
-    }
-
-    private static function is_fluentcrm_active() {
-        return class_exists('FluentCrm\App\Models\Subscriber') || class_exists('FluentCRM\App\Models\Subscriber');
-    }
-
-    private static function is_fluentsupport_active() {
-        return class_exists('FluentSupport\App\Models\Ticket');
-    }
-
-    private static function is_fluentproject_active() {
-        return class_exists('FluentBoards\App\Models\Board');
+        \JRB\RemoteApi\Handlers\FluentCrmHandler::register_routes();
+        \JRB\RemoteApi\Handlers\FluentSupportHandler::register_routes();
+        \JRB\RemoteApi\Handlers\FluentProjectHandler::register_routes();
     }
 }

@@ -3,49 +3,62 @@ namespace JRB\RemoteApi\Auth;
 
 if (!defined('ABSPATH')) exit;
 
-/**
- * Handles API Authentication and Permissions
- */
 class Guard {
+    
     public static function init() {
-        // Any early-hook auth logic
+        // No specific init needed usually, but held for parity
     }
 
-    /**
-     * Basic check used by Handlers
-     */
-    public static function check($capability = '') {
-        $token = self::get_token_from_request();
-        if (empty($token)) {
-            return false;
+    public static function verify_token() {
+        $header = isset($_SERVER['HTTP_X_OPENCLAW_TOKEN']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_X_OPENCLAW_TOKEN'])) : '';
+        
+        if (empty($header)) {
+            return new \WP_Error('missing_header', 'Missing X-OpenClaw-Token header', ['status' => 401]);
         }
-
-        $valid_token = get_option('jrb_remote_api_token');
-        if (empty($valid_token) || $token !== $valid_token) {
-            return false;
+        
+        // Hashed check (Preferred)
+        $token_hash = get_option('openclaw_api_token_hash');
+        if (!empty($token_hash)) {
+            if (hash_equals($token_hash, wp_hash($header))) return true;
         }
-
-        // Check for specific capability if provided
-        if (!empty($capability)) {
-            return self::can($capability);
+        
+        // Legacy fallback
+        $legacy_token = get_option('openclaw_api_token');
+        if (!empty($legacy_token)) {
+            if (hash_equals($legacy_token, $header)) {
+                update_option('openclaw_api_token_hash', wp_hash($legacy_token));
+                delete_option('openclaw_api_token');
+                return true;
+            }
         }
-
-        return true;
+        
+        return new \WP_Error('invalid_token', 'Invalid API token', ['status' => 401]);
     }
 
     public static function can($capability) {
-        $token_permissions = get_option('jrb_remote_api_permissions', []);
+        $caps = get_option('openclaw_api_capabilities', []);
         
-        // SECURITY FIX: Default to false if no permissions are defined.
-        if (empty($token_permissions)) {
-            return false; 
+        // Internal default for core fallback if not set
+        $core_defaults = [
+            'site_info' => true,
+            'posts_read' => true,
+            'media_read' => true,
+        ];
+
+        if (isset($caps[$capability])) {
+            return (bool)$caps[$capability];
         }
 
-        return in_array($capability, $token_permissions, true);
+        return $core_defaults[$capability] ?? false;
     }
 
-    private static function get_token_from_request() {
-        // SECURITY FIX: Only accept tokens via HTTP Headers to avoid URL logging.
-        return $_SERVER['HTTP_X_JRB_TOKEN'] ?? $_SERVER['HTTP_X_jrb_remote_TOKEN'] ?? '';
+    public static function verify_token_and_can($capability) {
+        $token_check = self::verify_token();
+        if (is_wp_error($token_check)) return $token_check;
+        
+        if (!self::can($capability)) {
+            return new \WP_Error('capability_denied', "API capability '$capability' is disabled", ['status' => 403]);
+        }
+        return true;
     }
 }
