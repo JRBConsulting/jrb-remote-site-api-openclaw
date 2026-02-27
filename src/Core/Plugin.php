@@ -8,7 +8,7 @@ if (!defined('ABSPATH')) exit;
  */
 class Plugin {
     const VERSION = '6.4.0';
-    const TEXT_DOMAIN = 'jrb-remote-api';
+    const TEXT_DOMAIN = 'jrb-remote-site-api-for-openclaw';
     const API_NAMESPACE = 'jrb-remote/v1';
 
     public static function init() {
@@ -18,6 +18,11 @@ class Plugin {
         // Initialize Core Components
         if (class_exists('\JRB\RemoteApi\Auth\Guard')) {
             \JRB\RemoteApi\Auth\Guard::init();
+        }
+
+        // Initialize Admin UI
+        if (is_admin()) {
+            \JRB\RemoteApi\Handlers\AdminHandler::init();
         }
         
         // Initialize Modules

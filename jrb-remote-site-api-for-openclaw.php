@@ -1,11 +1,11 @@
 <?php
 /**
- * Plugin Name: JRB Remote Site API
+ * Plugin Name: JRB Remote Site API for OpenClaw
  * Description: WordPress REST API for JRB Consulting remote site management
  * Version: 6.4.0
  * Author: JRB Consulting
  * License: GPLv2 or later
- * Text Domain: jrb-remote-api
+ * Text Domain: jrb-remote-site-api-for-openclaw
  */
 
 if (!defined('ABSPATH')) exit;

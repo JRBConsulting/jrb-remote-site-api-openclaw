@@ -15,11 +15,11 @@ JRB Remote Site API provides a secure, high-fidelity bridge between your WordPre
 
 == Installation ==
 
-1. Upload the `jrb-remote-site-api` folder to the `/wp-content/plugins/` directory.
+1. Upload the `jrb-remote-site-api-for-openclaw` folder to the `/wp-content/plugins/` directory.
 2. Activate the plugin through the 'Plugins' menu in WordPress.
 3. Configure your API token and permissions in the 'JRB Remote API' settings page.
 4. **Agent Integration:** To utilize this API with an jrb_remote agent, install the corresponding skill:
-   `clawhub install jrb-remote-site-api`
+   `clawhub install jrb-remote-site-api-for-openclaw`
 
 == Changelog ==
 
